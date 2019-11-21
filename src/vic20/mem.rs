@@ -33,20 +33,20 @@ impl From<(U4, u8)> for U12 {
     }
 }
 
-static CHAR_ROM_BEGIN: U14 = U14(0x1000);
-static CHAR_ROM_LEN: U14 = U14(0x1000);
+const CHAR_ROM_BEGIN: U14 = U14(0x1000);
+const CHAR_ROM_LEN: U14 = U14(0x1000);
 lazy_static! {
     static ref RAM_OFFSET_MAP: EnumMap<BankingState, u16> = enum_map! {
-        Bank0 => 0x0000,
-        Bank1 => 0x4000,
-        Bank2 => 0x8000,
-        Bank3 => 0xc000,
+        BankingState::Bank0 => 0x0000,
+        BankingState::Bank1 => 0x4000,
+        BankingState::Bank2 => 0x8000,
+        BankingState::Bank3 => 0xc000,
     };
 }
 
-pub struct MemoryView<'r> {
+pub struct MemoryView<'r, T: AsRef<[u8]>> {
     banking_state: BankingState,
-    char_rom: &'r ROM,
+    char_rom: &'r ROM<T>,
     ram: Rc<RefCell<RAM>>,
 }
 
@@ -58,8 +58,8 @@ enum BankingState {
     Bank3,
 }
 
-impl<'r> MemoryView<'r> {
-    pub fn new(char_rom: &'r ROM, ram: Rc<RefCell<RAM>>) -> Self {
+impl<'r, T: AsRef<[u8]>> MemoryView<'r, T> {
+    pub fn new(char_rom: &'r ROM<T>, ram: Rc<RefCell<RAM>>) -> Self {
         MemoryView {
             banking_state: BankingState::Bank0,
             char_rom,

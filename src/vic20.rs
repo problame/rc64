@@ -6,12 +6,12 @@ use crate::rom::ROM;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub struct VIC20<'r> {
-    mem: MemoryView<'r>,
+pub struct VIC20<'r, T: AsRef<[u8]>> {
+    mem: MemoryView<'r, T>,
 }
 
-impl<'r> VIC20<'r> {
-    pub fn new(char_rom: &'r ROM, ram: Rc<RefCell<RAM>>) -> Self {
+impl<'r, T: AsRef<[u8]>> VIC20<'r, T> {
+    pub fn new(char_rom: &'r ROM<T>, ram: Rc<RefCell<RAM>>) -> Self {
         VIC20 {
             mem: MemoryView::new(char_rom, ram),
         }
@@ -26,7 +26,7 @@ impl<'r> VIC20<'r> {
 use super::mos6510::{MemoryArea, WriteResult};
 
 /// These map the VIC20 Control Registers
-impl<'r> MemoryArea for VIC20<'r> {
+impl<'r, T: AsRef<[u8]>> MemoryArea for VIC20<'r, T> {
     fn read(&self, addr: u16) -> u8 {
         unimplemented!()
     }

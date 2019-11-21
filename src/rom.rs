@@ -1,31 +1,31 @@
 use super::mos6510::{MemoryArea, WriteResult};
 
-pub struct ROM {
-    content: Vec<u8>,
+pub struct ROM<T: AsRef<[u8]>> {
+    content: T,
 }
 
-impl MemoryArea for ROM {
+impl<T: AsRef<[u8]>> MemoryArea for ROM<T> {
     fn read(&self, addr: u16) -> u8 {
-        self.content[addr as usize]
+        self.content.as_ref()[addr as usize]
     }
 
-    fn write(&mut self, addr: u16, val: u8) -> WriteResult {
+    fn write(&mut self, _addr: u16, _val: u8) -> WriteResult {
         WriteResult::Ignored
     }
 }
 
-impl MemoryArea for &'_ ROM {
+impl<T: AsRef<[u8]>> MemoryArea for &'_ mut ROM<T> {
     fn read(&self, addr: u16) -> u8 {
-        (*self).read(addr)
+        (**self).read(addr)
     }
 
     fn write(&mut self, addr: u16, val: u8) -> WriteResult {
-        (*self).write(addr, val)
+        (**self).write(addr, val)
     }
 }
 
-impl From<&[u8]> for ROM {
-    fn from(bytes: &[u8]) -> ROM {
+impl From<&[u8]> for ROM<Vec<u8>> {
+    fn from(bytes: &[u8]) -> Self {
         ROM {
             content: bytes.to_owned(),
         }
@@ -34,12 +34,15 @@ impl From<&[u8]> for ROM {
 
 pub mod stock {
     use super::*;
-    use lazy_static::lazy_static;
 
-    lazy_static! {
-        // FIXME include_bytes
-        pub static ref BASIC_ROM: ROM = ROM::from(include_bytes!("../rsrc/basic_rom.img") as &[u8]);
-        pub static ref KERNAL: ROM = ROM::from(include_bytes!("../rsrc/kernal.img") as &[u8]);
-        pub static ref CHAR_ROM: ROM = ROM::from(include_bytes!("../rsrc/char_rom.img") as &[u8]);
-    }
+    // FIXME include_bytes
+    pub const BASIC_ROM: ROM<&'static [u8]> = ROM {
+        content: include_bytes!("../rsrc/basic_rom.img"),
+    };
+    pub const KERNAL: ROM<&'static [u8]> = ROM {
+        content: include_bytes!("../rsrc/kernal.img"),
+    };
+    pub const CHAR_ROM: ROM<&'static [u8]> = ROM {
+        content: include_bytes!("../rsrc/char_rom.img"),
+    };
 }

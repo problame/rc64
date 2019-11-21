@@ -27,8 +27,8 @@ fn main() {
 
     // FIXME These probably all need to be Rc<RefCell<.>>s
     let areas = enum_map::enum_map! {
-        MemoryAreaKind::BasicRom =>  Rc::new(&*rom::stock::BASIC_ROM) as Rc<dyn MemoryArea>,
-        MemoryAreaKind::KernelRom => Rc::new(&*rom::stock::KERNAL) as Rc<dyn MemoryArea>,
+        MemoryAreaKind::BasicRom =>  Rc::new(rom::stock::BASIC_ROM) as Rc<dyn MemoryArea>,
+        MemoryAreaKind::KernelRom => Rc::new(rom::stock::KERNAL) as Rc<dyn MemoryArea>,
         MemoryAreaKind::IO1 =>       Rc::new(UnimplMemoryArea) as Rc<dyn MemoryArea>,
         MemoryAreaKind::IO2 =>       Rc::new(UnimplMemoryArea) as Rc<dyn MemoryArea>,
         MemoryAreaKind::CIA2 =>      Rc::new(UnimplMemoryArea) as Rc<dyn MemoryArea>,
@@ -36,7 +36,7 @@ fn main() {
         MemoryAreaKind::ColorRam =>  Rc::new(UnimplMemoryArea) as Rc<dyn MemoryArea>,
         MemoryAreaKind::SID =>       Rc::new(UnimplMemoryArea) as Rc<dyn MemoryArea>,
         MemoryAreaKind::VIC =>       vic20.clone(),
-        MemoryAreaKind::CharRom =>   Rc::new(&*rom::stock::CHAR_ROM) as Rc<dyn MemoryArea>,
+        MemoryAreaKind::CharRom =>   Rc::new(rom::stock::CHAR_ROM) as Rc<dyn MemoryArea>,
     };
 
     let mut mpu = mos6510::MOS6510::new(areas, ram.clone());
