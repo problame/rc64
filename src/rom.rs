@@ -1,6 +1,6 @@
 use super::mos6510::{MemoryArea, WriteResult};
 
-pub struct ROM<T: AsRef<[u8]>> {
+pub struct ROM<T> {
     content: T,
 }
 

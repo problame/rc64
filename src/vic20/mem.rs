@@ -43,9 +43,9 @@ lazy_static! {
     };
 }
 
-pub struct MemoryView<'r, T: AsRef<[u8]>> {
+pub struct MemoryView<T> {
     banking_state: BankingState,
-    char_rom: &'r ROM<T>,
+    char_rom: ROM<T>,
     ram: R2C<RAM>,
 }
 
@@ -57,8 +57,8 @@ enum BankingState {
     Bank3,
 }
 
-impl<'r, T: AsRef<[u8]>> MemoryView<'r, T> {
-    pub fn new(char_rom: &'r ROM<T>, ram: R2C<RAM>) -> Self {
+impl<T: AsRef<[u8]>> MemoryView<T> {
+    pub fn new(char_rom: ROM<T>, ram: R2C<RAM>) -> Self {
         MemoryView {
             banking_state: BankingState::Bank0,
             char_rom,

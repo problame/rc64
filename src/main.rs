@@ -21,7 +21,7 @@ impl mos6510::MemoryArea for UnimplMemoryArea {
 fn main() {
     let ram = r2c_new!(RAM::default());
 
-    let vic20 = r2c_new!(vic20::VIC20::new(&rom::stock::CHAR_ROM, ram.clone()));
+    let vic20 = r2c_new!(vic20::VIC20::new(rom::stock::CHAR_ROM, ram.clone()));
 
     use mos6510::*;
 
