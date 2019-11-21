@@ -1,17 +1,18 @@
+use crate::ram::RAM;
 use bit_vec::BitVec;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 pub type Areas = enum_map::EnumMap<MemoryAreaKind, Rc<dyn MemoryArea>>;
 pub struct MemoryView {
     banking_state: BankingState,
     memory_areas: Areas,
-    ram: RAM,
+    ram: Rc<RefCell<RAM>>,
 }
 
 impl MemoryView {
-    pub fn new(memory_areas: Areas) -> Self {
+    pub fn new(memory_areas: Areas, ram: Rc<RefCell<RAM>>) -> Self {
         let banking_state = BankingState::default();
-        let ram = RAM::default();
         MemoryView {
             banking_state,
             memory_areas,
@@ -32,7 +33,7 @@ impl MemoryView {
             }
         }
 
-        self.ram.read(addr)
+        self.ram.borrow().read(addr)
     }
 
     pub fn write(&mut self, addr: u16, val: u8) {
@@ -58,7 +59,7 @@ impl MemoryView {
             }
         }
 
-        self.ram.write(addr, val);
+        self.ram.borrow_mut().write(addr, val);
     }
 }
 
@@ -208,27 +209,6 @@ pub enum WriteResult {
     Ignored,
 }
 
-struct RAM {
-    content: [u8; 0x10000],
-}
-impl Default for RAM {
-    fn default() -> Self {
-        RAM {
-            content: [0; 0x10000],
-        }
-    }
-}
-
-impl RAM {
-    fn read(&self, addr: u16) -> u8 {
-        self.content[addr as usize]
-    }
-
-    fn write(&mut self, addr: u16, val: u8) {
-        self.content[addr as usize] = val
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,7 +244,9 @@ mod tests {
             MemoryAreaKind::VIC => Rc::new(MockArea(8, WriteResult::Wrote)) as Rc<dyn MemoryArea>,
             MemoryAreaKind::CharRom => Rc::new(MockArea(9, WriteResult::Wrote)) as Rc<dyn MemoryArea>,
         };
-        let mut mv = MemoryView::new(areas);
+        let ram = Rc::new(RefCell::new(RAM::default()));
+
+        let mut mv = MemoryView::new(areas, ram);
 
         mv.write(0x23, 42);
         assert_eq!(mv.read(0x23), 42);
