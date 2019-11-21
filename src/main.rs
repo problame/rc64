@@ -1,10 +1,15 @@
 #[macro_use]
 mod utils;
+mod color_ram;
 mod mos6510;
 mod ram;
 mod rom;
 mod vic20;
+mod backend {
+    pub(super) mod fb_minifb;
+}
 
+use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::utils::R2C;
 
@@ -20,8 +25,16 @@ impl mos6510::MemoryArea for UnimplMemoryArea {
 
 fn main() {
     let ram = r2c_new!(RAM::default());
+    let color_ram = r2c_new!(ColorRAM::default());
 
-    let vic20 = r2c_new!(vic20::VIC20::new(rom::stock::CHAR_ROM, ram.clone()));
+    let screen = Box::new(backend::fb_minifb::Minifb::new());
+
+    let vic20 = r2c_new!(vic20::VIC20::new(
+        rom::stock::CHAR_ROM,
+        ram.clone(),
+        color_ram.clone(),
+        screen
+    ));
 
     use mos6510::*;
 
@@ -33,7 +46,7 @@ fn main() {
         MemoryAreaKind::IO2 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::CIA2 =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::CIA1 =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::ColorRam =>  r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::ColorRam =>  color_ram.clone() as R2C<dyn MemoryArea>,
         MemoryAreaKind::SID =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::VIC =>       vic20.clone(),
         MemoryAreaKind::CharRom =>   r2c_new!(rom::stock::CHAR_ROM) as R2C<dyn MemoryArea>,

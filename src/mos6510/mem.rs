@@ -1,7 +1,6 @@
 use crate::ram::RAM;
 use crate::utils::R2C;
 use bit_vec::BitVec;
-use std::rc::Rc;
 
 pub type Areas = enum_map::EnumMap<MemoryAreaKind, R2C<dyn MemoryArea>>;
 pub struct MemoryView {
@@ -47,8 +46,8 @@ impl MemoryView {
 
         for segment in self.banking_state.iter() {
             if let Some(addr) = segment.relative_address(addr) {
-                let area = Rc::get_mut(&mut self.memory_areas[segment.kind]).unwrap();
-                match area.borrow_mut().write(addr, val) {
+                let area = &mut self.memory_areas[segment.kind].borrow_mut();
+                match area.write(addr, val) {
                     WriteResult::Wrote => {
                         return;
                     }
