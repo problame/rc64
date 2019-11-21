@@ -28,7 +28,7 @@ impl MemoryView {
         }
 
         for segment in self.banking_state.iter() {
-            if segment.contains(addr) {
+            if let Some(addr) = segment.relative_address(addr) {
                 return self.memory_areas[segment.kind].borrow().read(addr);
             }
         }
@@ -46,7 +46,7 @@ impl MemoryView {
         }
 
         for segment in self.banking_state.iter() {
-            if segment.contains(addr) {
+            if let Some(addr) = segment.relative_address(addr) {
                 let area = Rc::get_mut(&mut self.memory_areas[segment.kind]).unwrap();
                 match area.borrow_mut().write(addr, val) {
                     WriteResult::Wrote => {
@@ -193,8 +193,16 @@ struct Segment {
 }
 
 impl Segment {
-    fn contains(&self, addr: u16) -> bool {
-        self.base <= addr && (addr as u32) < (self.base as u32 + self.len as u32)
+    fn relative_address(&self, absolute_addr: u16) -> Option<u16> {
+        absolute_addr
+            .checked_sub(self.base)
+            .and_then(|relative_addr| {
+                if relative_addr < self.len {
+                    Some(relative_addr)
+                } else {
+                    None
+                }
+            })
     }
 }
 
