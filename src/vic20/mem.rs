@@ -1,13 +1,12 @@
 use crate::mos6510::MemoryArea;
 use crate::ram::RAM;
 use crate::rom::ROM;
+use crate::utils::R2C;
 use std::ops::Add;
 
 use derive_more::{Add, Into, Sub};
 use enum_map::{enum_map, EnumMap};
 use lazy_static::lazy_static;
-use std::cell::RefCell;
-use std::rc::Rc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Add, Sub, Into)]
 pub struct U14(u16);
@@ -47,7 +46,7 @@ lazy_static! {
 pub struct MemoryView<'r, T: AsRef<[u8]>> {
     banking_state: BankingState,
     char_rom: &'r ROM<T>,
-    ram: Rc<RefCell<RAM>>,
+    ram: R2C<RAM>,
 }
 
 #[derive(Clone, Copy, Debug, enum_map::Enum, PartialEq, Eq)]
@@ -59,7 +58,7 @@ enum BankingState {
 }
 
 impl<'r, T: AsRef<[u8]>> MemoryView<'r, T> {
-    pub fn new(char_rom: &'r ROM<T>, ram: Rc<RefCell<RAM>>) -> Self {
+    pub fn new(char_rom: &'r ROM<T>, ram: R2C<RAM>) -> Self {
         MemoryView {
             banking_state: BankingState::Bank0,
             char_rom,

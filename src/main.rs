@@ -1,11 +1,12 @@
+#[macro_use]
+mod utils;
 mod mos6510;
 mod ram;
 mod rom;
 mod vic20;
 
 use crate::ram::RAM;
-
-use std::cell::RefCell;
+use crate::utils::R2C;
 
 struct UnimplMemoryArea;
 impl mos6510::MemoryArea for UnimplMemoryArea {
@@ -18,31 +19,30 @@ impl mos6510::MemoryArea for UnimplMemoryArea {
 }
 
 fn main() {
-    use std::rc::Rc;
-    let ram = Rc::new(RefCell::new(RAM::default()));
+    let ram = r2c_new!(RAM::default());
 
-    let vic20 = Rc::new(vic20::VIC20::new(&rom::stock::CHAR_ROM, ram.clone()));
+    let vic20 = r2c_new!(vic20::VIC20::new(&rom::stock::CHAR_ROM, ram.clone()));
 
     use mos6510::*;
 
     // FIXME These probably all need to be Rc<RefCell<.>>s
     let areas = enum_map::enum_map! {
-        MemoryAreaKind::BasicRom =>  Rc::new(rom::stock::BASIC_ROM) as Rc<dyn MemoryArea>,
-        MemoryAreaKind::KernelRom => Rc::new(rom::stock::KERNAL) as Rc<dyn MemoryArea>,
-        MemoryAreaKind::IO1 =>       Rc::new(UnimplMemoryArea) as Rc<dyn MemoryArea>,
-        MemoryAreaKind::IO2 =>       Rc::new(UnimplMemoryArea) as Rc<dyn MemoryArea>,
-        MemoryAreaKind::CIA2 =>      Rc::new(UnimplMemoryArea) as Rc<dyn MemoryArea>,
-        MemoryAreaKind::CIA1 =>      Rc::new(UnimplMemoryArea) as Rc<dyn MemoryArea>,
-        MemoryAreaKind::ColorRam =>  Rc::new(UnimplMemoryArea) as Rc<dyn MemoryArea>,
-        MemoryAreaKind::SID =>       Rc::new(UnimplMemoryArea) as Rc<dyn MemoryArea>,
+        MemoryAreaKind::BasicRom =>  r2c_new!(rom::stock::BASIC_ROM) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::KernelRom => r2c_new!(rom::stock::KERNAL) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::IO1 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::IO2 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CIA2 =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CIA1 =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::ColorRam =>  r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::SID =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::VIC =>       vic20.clone(),
-        MemoryAreaKind::CharRom =>   Rc::new(rom::stock::CHAR_ROM) as Rc<dyn MemoryArea>,
+        MemoryAreaKind::CharRom =>   r2c_new!(rom::stock::CHAR_ROM) as R2C<dyn MemoryArea>,
     };
 
     let mut mpu = mos6510::MOS6510::new(areas, ram.clone());
 
     loop {
-        vic20.cycle();
+        vic20.borrow_mut().cycle();
         mpu.cycle();
     }
 }

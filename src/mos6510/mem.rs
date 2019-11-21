@@ -1,17 +1,17 @@
 use crate::ram::RAM;
+use crate::utils::R2C;
 use bit_vec::BitVec;
-use std::cell::RefCell;
 use std::rc::Rc;
 
-pub type Areas = enum_map::EnumMap<MemoryAreaKind, Rc<dyn MemoryArea>>;
+pub type Areas = enum_map::EnumMap<MemoryAreaKind, R2C<dyn MemoryArea>>;
 pub struct MemoryView {
     banking_state: BankingState,
     memory_areas: Areas,
-    ram: Rc<RefCell<RAM>>,
+    ram: R2C<RAM>,
 }
 
 impl MemoryView {
-    pub fn new(memory_areas: Areas, ram: Rc<RefCell<RAM>>) -> Self {
+    pub fn new(memory_areas: Areas, ram: R2C<RAM>) -> Self {
         let banking_state = BankingState::default();
         MemoryView {
             banking_state,
@@ -29,7 +29,7 @@ impl MemoryView {
 
         for segment in self.banking_state.iter() {
             if segment.contains(addr) {
-                return self.memory_areas[segment.kind].read(addr);
+                return self.memory_areas[segment.kind].borrow().read(addr);
             }
         }
 
@@ -48,7 +48,7 @@ impl MemoryView {
         for segment in self.banking_state.iter() {
             if segment.contains(addr) {
                 let area = Rc::get_mut(&mut self.memory_areas[segment.kind]).unwrap();
-                match area.write(addr, val) {
+                match area.borrow_mut().write(addr, val) {
                     WriteResult::Wrote => {
                         return;
                     }
@@ -233,18 +233,18 @@ mod tests {
     #[test]
     fn test_default_memory_view() {
         let areas = enum_map::enum_map! {
-            MemoryAreaKind::BasicRom => Rc::new(MockArea(0, WriteResult::Wrote)) as Rc<dyn MemoryArea>,
-            MemoryAreaKind::KernelRom => Rc::new(MockArea(1, WriteResult::Ignored)) as Rc<dyn MemoryArea>,
-            MemoryAreaKind::IO1 => Rc::new(MockArea(2, WriteResult::Wrote)) as Rc<dyn MemoryArea>,
-            MemoryAreaKind::IO2 => Rc::new(MockArea(3, WriteResult::Wrote)) as Rc<dyn MemoryArea>,
-            MemoryAreaKind::CIA2 => Rc::new(MockArea(4, WriteResult::Wrote)) as Rc<dyn MemoryArea>,
-            MemoryAreaKind::CIA1 => Rc::new(MockArea(5, WriteResult::Wrote)) as Rc<dyn MemoryArea>,
-            MemoryAreaKind::ColorRam => Rc::new(MockArea(6, WriteResult::Wrote)) as Rc<dyn MemoryArea>,
-            MemoryAreaKind::SID => Rc::new(MockArea(7, WriteResult::Wrote)) as Rc<dyn MemoryArea>,
-            MemoryAreaKind::VIC => Rc::new(MockArea(8, WriteResult::Wrote)) as Rc<dyn MemoryArea>,
-            MemoryAreaKind::CharRom => Rc::new(MockArea(9, WriteResult::Wrote)) as Rc<dyn MemoryArea>,
+            MemoryAreaKind::BasicRom => r2c_new!(MockArea(0, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::KernelRom => r2c_new!(MockArea(1, WriteResult::Ignored)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::IO1 => r2c_new!(MockArea(2, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::IO2 => r2c_new!(MockArea(3, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::CIA2 => r2c_new!(MockArea(4, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::CIA1 => r2c_new!(MockArea(5, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::ColorRam => r2c_new!(MockArea(6, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::SID => r2c_new!(MockArea(7, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::VIC => r2c_new!(MockArea(8, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::CharRom => r2c_new!(MockArea(9, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
         };
-        let ram = Rc::new(RefCell::new(RAM::default()));
+        let ram = r2c_new!(RAM::default());
 
         let mut mv = MemoryView::new(areas, ram);
 
@@ -258,14 +258,14 @@ mod tests {
         // test writethrough areas (i.e. KERNAL ROM)
         mv.write(0xe023, 42);
         assert_eq!(mv.read(0xe023), 1);
-        assert_eq!(mv.ram.read(0xe023), 42);
+        assert_eq!(mv.ram.borrow().read(0xe023), 42);
         // now unmap kernal rom by unsetting
         mv.write(0x0000, mv.banking_state.cpu_control_lines & !(0x2));
         assert_eq!(mv.read(0xe023), 42);
-        assert_eq!(mv.ram.read(0xe023), 42);
+        assert_eq!(mv.ram.borrow().read(0xe023), 42);
         // now remap kernal rom by setting KERNAL
         mv.write(0x0000, mv.banking_state.cpu_control_lines | (0x2));
         assert_eq!(mv.read(0xe023), 1);
-        assert_eq!(mv.ram.read(0xe023), 42);
+        assert_eq!(mv.ram.borrow().read(0xe023), 42);
     }
 }

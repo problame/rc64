@@ -27,7 +27,7 @@ use super::mos6510::{MemoryArea, WriteResult};
 
 /// These map the VIC20 Control Registers
 impl<'r, T: AsRef<[u8]>> MemoryArea for VIC20<'r, T> {
-    fn read(&self, addr: u16) -> u8 {
+    fn read(&mut self, addr: u16) -> u8 {
         unimplemented!()
     }
     fn write(&mut self, addr: u16, v: u8) -> WriteResult {
