@@ -6,6 +6,7 @@ extern crate bitflags;
 
 #[macro_use]
 mod utils;
+mod cia;
 mod color_ram;
 mod mos6510;
 mod ram;
@@ -15,6 +16,7 @@ mod backend {
     pub(super) mod fb_minifb;
 }
 
+use crate::cia::CIA;
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::utils::R2C;
@@ -50,6 +52,9 @@ fn main() {
         screen
     ));
 
+    let cia1 = r2c_new!(CIA::new_chip1());
+    let cia2 = r2c_new!(CIA::new_chip2(cia1.clone(), vic20.clone()));
+
     use mos6510::*;
 
     // FIXME These probably all need to be Rc<RefCell<.>>s
@@ -58,8 +63,8 @@ fn main() {
         MemoryAreaKind::KernelRom => kernal.clone(),
         MemoryAreaKind::IO1 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::IO2 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::CIA2 =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::CIA1 =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CIA1 =>      cia1.clone(),
+        MemoryAreaKind::CIA2 =>      cia2.clone(),
         MemoryAreaKind::ColorRam =>  color_ram.clone() as R2C<dyn MemoryArea>,
         MemoryAreaKind::SID =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::VIC =>       vic20.clone(),
@@ -84,6 +89,9 @@ fn main() {
             loop_helper.loop_start();
         }
         cycles += 1;
+
+        cia1.borrow().cycle();
+
         let is_vic_cycle = cycles % 100_000 == 0;
 
         if is_vic_cycle {
