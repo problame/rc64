@@ -1,3 +1,4 @@
+mod instr;
 mod mem;
 
 use crate::ram::RAM;
