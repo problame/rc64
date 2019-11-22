@@ -4,6 +4,9 @@ extern crate strum_macros;
 extern crate maplit;
 
 #[macro_use]
+extern crate bitflags;
+
+#[macro_use]
 mod utils;
 mod color_ram;
 mod mos6510;
@@ -29,6 +32,14 @@ impl mos6510::MemoryArea for UnimplMemoryArea {
 }
 
 fn main() {
+    let kernal = if std::env::args().len() == 2 {
+        let kernal_img = std::fs::read(std::env::args().nth(1).unwrap())
+            .expect("read custom kernal image failed");
+        r2c_new!(rom::ROM::from(kernal_img)) as R2C<dyn MemoryArea>
+    } else {
+        r2c_new!(rom::stock::KERNAL) as R2C<dyn MemoryArea>
+    };
+
     let ram = r2c_new!(RAM::default());
     let color_ram = r2c_new!(ColorRAM::default());
 
@@ -46,7 +57,7 @@ fn main() {
     // FIXME These probably all need to be Rc<RefCell<.>>s
     let areas = enum_map::enum_map! {
         MemoryAreaKind::BasicRom =>  r2c_new!(rom::stock::BASIC_ROM) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::KernelRom => r2c_new!(rom::stock::KERNAL) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::KernelRom => kernal.clone(),
         MemoryAreaKind::IO1 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::IO2 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::CIA2 =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
@@ -59,8 +70,32 @@ fn main() {
 
     let mut mpu = mos6510::MOS6510::new(areas, ram.clone());
 
+    use spin_sleep::LoopHelper;
+
+    let mut loop_helper = LoopHelper::builder()
+        .report_interval_s(0.5)
+        .build_with_target_rate(1_000.0f64); // scale by 1000
+
+    let mut cycles = 0;
     loop {
-        vic20.borrow_mut().cycle();
+        if cycles % 1000 == 0 {
+            // scale callback by 1000 because our loop is so fast
+            loop_helper.loop_start();
+        }
+        cycles += 1;
+        let is_vic_cycle = cycles % 100_000 == 0;
+
+        if is_vic_cycle {
+            vic20.borrow_mut().cycle();
+        }
         mpu.cycle();
+
+        if let Some(r) = loop_helper.report_rate() {
+            println!("Mcycles / sec = {:.?}", r / 1_000.0);
+        }
+        if cycles % 1000 == 0 {
+            // scale callback by 1000 because our loop is so fast
+            loop_helper.loop_sleep();
+        }
     }
 }

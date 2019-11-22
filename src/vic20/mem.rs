@@ -16,7 +16,7 @@ pub struct U12(u16);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Add, Sub, Into)]
 pub struct U4(u8);
 
-const U14_MAX: usize = 1 << 14 - 1;
+const U14_MAX: usize = (1 << 14) - 1;
 
 impl Add<u16> for U14 {
     type Output = u16;

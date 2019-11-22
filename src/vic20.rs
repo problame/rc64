@@ -13,7 +13,7 @@ pub const SCREEN_HEIGHT: usize = 25 * 8;
 use num_enum::TryFromPrimitive;
 
 /// https://www.c64-wiki.com/wiki/Color
-#[derive(Debug, Eq, PartialEq, TryFromPrimitive)]
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive, Copy, Clone)]
 #[repr(u8)]
 pub enum Color {
     Black = 0,
@@ -43,7 +43,7 @@ impl From<self::mem::U4> for Color {
 pub struct Point(pub usize, pub usize);
 
 pub trait ScreenBackend {
-    fn set_point(&mut self, p: Point, c: Color);
+    fn set_char_line(&mut self, p: Point, fg: Color, bg: Color, word: u8);
 }
 
 pub struct VIC20<T> {
@@ -74,7 +74,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
 
         for y in 0..SCREEN_HEIGHT {
             let char_row = y / 8;
-            for x in 0..SCREEN_WIDTH {
+            for x in (0..SCREEN_WIDTH).step_by(8) {
                 let char_col = x / 8;
                 let (color, ch) = self
                     .mem
@@ -84,14 +84,12 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 let bm = self
                     .mem
                     .read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
-                let bitpos = (8 - (x % 8)) - 1;
-                let is_fg = bm & (1 << bitpos) != 0;
-                let color = if is_fg {
-                    Color::try_from(color).unwrap()
-                } else {
-                    Color::try_from(0).unwrap() // TODO background register
-                };
-                self.screen.set_point(Point(x, y), color);
+                self.screen.set_char_line(
+                    Point(x, y),
+                    Color::try_from(color).unwrap(),
+                    Color::try_from(0).unwrap(),
+                    bm,
+                );
             }
         }
     }
@@ -102,9 +100,11 @@ use super::mos6510::{MemoryArea, WriteResult};
 /// These map the VIC20 Control Registers
 impl<T> MemoryArea for VIC20<T> {
     fn read(&self, addr: u16) -> u8 {
-        unimplemented!()
+        0
+        // unimplemented!()
     }
     fn write(&mut self, addr: u16, v: u8) -> WriteResult {
-        unimplemented!()
+        WriteResult::Wrote
+        // unimplemented!()
     }
 }

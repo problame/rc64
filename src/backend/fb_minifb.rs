@@ -1,6 +1,7 @@
 use crate::vic20::{Color, Point, ScreenBackend, SCREEN_HEIGHT, SCREEN_WIDTH};
 use minifb::{Window, WindowOptions};
-use std::sync::{Arc, Mutex};
+use spin::Mutex;
+use std::sync::Arc;
 
 pub struct Minifb {
     fb_buf: Arc<Mutex<Vec<u32>>>,
@@ -26,7 +27,7 @@ impl Minifb {
 
                 loop {
                     std::thread::sleep(std::time::Duration::from_micros(16666));
-                    let buf = fb_buf.lock().unwrap();
+                    let buf = fb_buf.lock();
                     fb.update_with_buffer(&buf).unwrap();
                 }
             })
@@ -37,10 +38,14 @@ impl Minifb {
 }
 
 impl ScreenBackend for Minifb {
-    fn set_point(&mut self, p: Point, c: Color) {
-        let Point(x, y) = p;
-        let mut buf = self.fb_buf.lock().unwrap();
-        buf[y * SCREEN_WIDTH + x] = ARGB::from(c).0;
+    fn set_char_line(&mut self, p: Point, fg: Color, bg: Color, bm_line: u8) {
+        let mut buf = self.fb_buf.lock();
+        for x_offset in 0..8 {
+            let bitpos = (8 - (x_offset % 8)) - 1;
+            let is_fg = bm_line & (1 << bitpos) != 0;
+            let color = if is_fg { fg } else { bg };
+            buf[p.1 * SCREEN_WIDTH + p.0 + x_offset] = ARGB::from(color).0;
+        }
     }
 }
 

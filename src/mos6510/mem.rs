@@ -19,6 +19,24 @@ impl MemoryView {
         }
     }
 
+    pub fn read_u16(&self, addr: u16) -> u16 {
+        debug_assert!(std::u16::MAX - addr > 0);
+        (self.read(addr) as u16) | ((self.read(addr + 1) as u16) << 8)
+    }
+
+    pub fn write_u16(&mut self, addr: u16, val: u16) {
+        debug_assert!(std::u16::MAX - addr > 0);
+        self.write(addr, (val & !(8 - 1)) as u8);
+        self.write(addr + 1, (val >> 8) as u8);
+    }
+
+    pub fn read_one_to_three(&self, addr: u16, out: &mut [u8]) {
+        debug_assert!(out.len() == 3);
+        out[0] = self.read(addr);
+        out[1] = addr.checked_add(1).map(|x| self.read(x)).unwrap_or(0);
+        out[2] = addr.checked_add(2).map(|x| self.read(x)).unwrap_or(0);
+    }
+
     pub fn read(&self, addr: u16) -> u8 {
         if addr == 0 {
             return self.banking_state.cpu_control_lines;
@@ -116,10 +134,12 @@ impl BankingState {
         self.update_banking()
     }
 
+    #[allow(clippy::collapsible_if)]
     fn update_banking(&mut self) {
         self.banking.clear();
 
         let bitmap = BitVec::from_bytes(&[self.expansion_port, self.cpu_control_lines]);
+        #[allow(clippy::identity_op)]
         let loram = bitmap.get(15 - 0).unwrap();
         let hiram = bitmap.get(15 - 1).unwrap();
         let charen = bitmap.get(15 - 2).unwrap();

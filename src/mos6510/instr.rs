@@ -82,24 +82,83 @@ pub enum Addr {
     IzY(u8),  // u8 points to LSB of a 16bit addr A on the zero page. *{*{u8, u8+1} + Y}
 }
 
+impl std::fmt::Display for Addr {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Addr::Imp => write!(fmt, "<??implicit??>"),
+            Addr::Acc => write!(fmt, "A"),
+            Addr::Imm(x) => write!(fmt, "#${:x}", x),
+            Addr::Zpi(x) => write!(fmt, "${:x}", x),
+            Addr::ZpX(x) => write!(fmt, "${:x},X", x),
+            Addr::ZpY(x) => write!(fmt, "${:?},Y", x),
+            Addr::PCr(x) => write!(fmt, "r{:+x}", x),
+            Addr::Abs(x) => write!(fmt, "${:x}", x),
+            Addr::AbX(x) => write!(fmt, "${:x},X", x),
+            Addr::AbY(x) => write!(fmt, "${:x},Y", x),
+            Addr::Ind(x) => write!(fmt, "(${:x})", x),
+            Addr::IzX(x) => write!(fmt, "(${:x}),X", x),
+            Addr::IzY(x) => write!(fmt, "(${:x}),Y", x),
+        }
+    }
+}
+
+impl std::fmt::Display for Instr {
+    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(fmt, "{:?}", self.0)?;
+        if self.1 != Addr::Imp {
+            write!(fmt, " {}", self.1)?;
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub struct Instr(pub Op, pub Addr);
 type Opcode = u8;
 
-pub fn decode_instr(peek: &[u8]) -> Result<(Instr, usize), Opcode> {
-    debug_assert!(peek.len() > 0);
+#[derive(Debug, Eq, PartialEq)]
+pub enum DecodeErr {
+    InvalidOpcode(u8),
+    PeekLength {
+        opcode: u8,
+        expected_length: u8,
+        available_peek: usize,
+    },
+}
+
+#[allow(clippy::cognitive_complexity)]
+pub fn decode_instr(peek: &[u8]) -> Result<(Instr, u8), DecodeErr> {
+    debug_assert!(!peek.is_empty());
 
     use Addr::*;
     use Op::*;
 
+    let mut len: u8 = 1; // opcode
+
+    macro_rules! peek_or_err {
+        ($n:expr) => {{
+            len += $n;
+            if peek.len() < len as usize {
+                return Err(DecodeErr::PeekLength {
+                    opcode: peek[0],
+                    expected_length: len,
+                    available_peek: peek.len(),
+                });
+            }
+        }};
+    }
+
     macro_rules! val {
         (u8) => {{
+            peek_or_err!(1);
             peek[1]
         }};
         (i8) => {{
+            peek_or_err!(1);
             peek[1] as i8
         }};
         (u16) => {{
+            peek_or_err!(2);
             (peek[1] as u16) | ((peek[2] as u16) << 8)
         }};
     }
@@ -107,8 +166,8 @@ pub fn decode_instr(peek: &[u8]) -> Result<(Instr, usize), Opcode> {
     macro_rules! i {
         ($($op:expr => { $($mode:tt=$opc:expr),* $(,)? });* $(;)?) => {
             match peek[0] {
-                $( $($opc => Ok( ( Instr($op, i!(CONV $mode) ), 1) )),* ),*,
-                x => Err(x),
+                $( $($opc => Instr($op, i!(CONV $mode))  ),* ),*,
+                x => return Err(DecodeErr::InvalidOpcode(x)),
             }
         };
         (CONV $mode:tt) => { i!(CONVP $mode) };
@@ -128,7 +187,7 @@ pub fn decode_instr(peek: &[u8]) -> Result<(Instr, usize), Opcode> {
     };
 
     // http://www.oxyron.de/html/opcodes02.html
-    i! {
+    let i = i! {
     ORA => {  Imm=0x09, Zpi=0x05, ZpX=0x15,  IzX=0x01, IzY=0x11, Abs=0x0D, AbX=0x1D, AbY=0x19,   };
     AND => {  Imm=0x29, Zpi=0x25, ZpX=0x35,  IzX=0x21, IzY=0x31, Abs=0x2D, AbX=0x3D, AbY=0x39,   };
     EOR => {  Imm=0x49, Zpi=0x45, ZpX=0x55,  IzX=0x41, IzY=0x51, Abs=0x4D, AbX=0x5D, AbY=0x59,   };
@@ -185,7 +244,9 @@ pub fn decode_instr(peek: &[u8]) -> Result<(Instr, usize), Opcode> {
     SEI => { Imp=0x78,            };
     CLV => { Imp=0xB8,            };
     NOP => { Imp=0xEA,            };
-        }
+        };
+
+    Ok((i, len))
 }
 
 #[cfg(test)]
