@@ -26,8 +26,8 @@ impl MemoryView {
 
     pub fn write_u16(&mut self, addr: u16, val: u16) {
         debug_assert!(std::u16::MAX - addr > 0);
-        self.write(addr, (val & !(8 - 1)) as u8);
-        self.write(addr + 1, (val >> 8) as u8);
+        self.write(addr, (val & 0xff) as u8); // LSB
+        self.write(addr + 1, (val >> 8) as u8); // MSB
     }
 
     pub fn read_one_to_three(&self, addr: u16, out: &mut [u8]) {
@@ -104,6 +104,7 @@ struct BankingState {
     banking: Vec<Segment>,
 }
 
+#[derive(Debug)]
 enum BankingStateUpdate {
     CpuControlLines(u8),
     ExpansionPort(u8),
@@ -123,6 +124,7 @@ impl Default for BankingState {
 
 impl BankingState {
     pub fn update(&mut self, update: BankingStateUpdate) {
+        println!("BANKING UPDATE {:?}", update);
         match update {
             BankingStateUpdate::CpuControlLines(value) => {
                 self.cpu_control_lines = value;
@@ -139,6 +141,7 @@ impl BankingState {
         self.banking.clear();
 
         let bitmap = BitVec::from_bytes(&[self.expansion_port, self.cpu_control_lines]);
+        println!("BITMAP = {:?}", bitmap);
         #[allow(clippy::identity_op)]
         let loram = bitmap.get(15 - 0).unwrap();
         let hiram = bitmap.get(15 - 1).unwrap();

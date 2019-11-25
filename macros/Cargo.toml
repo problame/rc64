@@ -1,0 +1,13 @@
+[package]
+name = "rc64-macros"
+version = "0.1.0"
+authors = ["Christian Schwarz <me@cschwarz.com>"]
+edition = "2018"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0", features = [ "full", "visit-mut"] }
+quote = "1.0"
+proc-macro2 = "1.0"
