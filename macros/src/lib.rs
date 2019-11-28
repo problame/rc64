@@ -20,7 +20,7 @@ impl syn::parse::Parse for Mi {
                 .collect();
         Ok(Mi {
             variant,
-            addr_modes
+            addr_modes,
         })
     }
 }

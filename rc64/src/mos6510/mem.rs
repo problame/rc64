@@ -82,6 +82,8 @@ impl MemoryView {
 
 #[derive(Clone, Copy, Debug, enum_map::Enum)]
 pub enum MemoryAreaKind {
+    Unmapped,
+
     // Roms
     BasicRom,
     KernelRom,
@@ -96,6 +98,9 @@ pub enum MemoryAreaKind {
     VIC,
 
     CharRom,
+
+    CartRomLow,
+    CartRomHi,
 }
 
 struct BankingState {
@@ -137,6 +142,7 @@ impl BankingState {
     }
 
     #[allow(clippy::collapsible_if)]
+    #[allow(clippy::cognitive_complexity)]
     fn update_banking(&mut self) {
         self.banking.clear();
 
@@ -146,45 +152,96 @@ impl BankingState {
         let loram = bitmap.get(15 - 0).unwrap();
         let hiram = bitmap.get(15 - 1).unwrap();
         let charen = bitmap.get(15 - 2).unwrap();
-        let _game = bitmap.get(15 - 8).unwrap();
-        let _exrom = bitmap.get(15 - 9).unwrap();
+        let game = bitmap.get(15 - 8).unwrap();
+        let exrom = bitmap.get(15 - 9).unwrap();
+        let combined = {
+            let mut v: u16 = 0;
+            v |= (exrom as u16) << 4;
+            v |= (game as u16) << 3;
+            v |= (charen as u16) << 2;
+            v |= (hiram as u16) << 1;
+            v |= (loram as u16);
+            v
+        };
+        debug_assert!(combined < 32);
 
         macro_rules! push_seg {
-            ($kind:expr, $base:expr, $len:expr ) => {
+            (RAM, $base:expr, $end_incl:expr) => {};
+            (IO, $base:expr, $end_incl:expr) => {{
+                push_seg!(VIC, 0xd000, 0xd000 + 0x400 - 1);
+                push_seg!(SID, 0xd400, 0xd400 + 0x400 - 1);
+                push_seg!(ColorRam, 0xd800, 0xd800 + 0x400 - 1); // TODO wasn't this 4096?
+                push_seg!(CIA1, 0xdc00, 0xdc00 + 0x100 - 1);
+                push_seg!(CIA2, 0xdd00, 0xdd00 + 0x100 - 1);
+                push_seg!(IO1, 0xde00, 0xde00 + 0x100 - 1);
+                push_seg!(IO2, 0xdf00, 0xdf00 + 0x100 - 1);
+            }};
+            ($kind:expr, $base:expr, $end_incl:expr ) => {
+                debug_assert!($end_incl > $base);
                 self.banking.push(Segment {
                     base: $base,
-                    len: $len,
+                    len: $end_incl - $base,
                     kind: $kind,
                 })
             };
         }
+        macro_rules! config {
+            ($a_0000_0FFF:tt,
+             $a_1000_7FFF:tt,
+             $a_8000_9FFF:tt,
+             $a_A000_BFFF:tt,
+             $a_C000_CFFF:tt,
+             $a_D000_DFFF:tt,
+             $a_E000_FFFF:tt) => {{
+                push_seg!($a_0000_0FFF, 0x0000, 0x0FFF);
+                push_seg!($a_1000_7FFF, 0x1000, 0x7FFF);
+                push_seg!($a_8000_9FFF, 0x8000, 0x9FFF);
+                push_seg!($a_A000_BFFF, 0xA000, 0xBFFF);
+                push_seg!($a_C000_CFFF, 0xC000, 0xCFFF);
+                push_seg!($a_D000_DFFF, 0xD000, 0xDFFF);
+                push_seg!($a_E000_FFFF, 0xE000, 0xFFFF);
+            }};
+        }
+
+        // ModeTable from https://www.c64-wiki.com/wiki/Bank_Switching#Mode_Table
         use MemoryAreaKind::*;
-        // https://www.c64-wiki.com/wiki/Bank_Switching#Control_bits
-        // BASIC ROM
-        if loram {
-            push_seg!(BasicRom, 0xa000, 0x2000);
+        match combined {
+            31 => config!(RAM, RAM, RAM, BasicRom, RAM, IO, KernelRom),
+            30 => config!(RAM, RAM, RAM, RAM, RAM, IO, KernelRom),
+            29 => config!(RAM, RAM, RAM, RAM, RAM, IO, RAM),
+            28 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
+            27 => config!(RAM, RAM, RAM, BasicRom, RAM, CharRom, KernelRom),
+            26 => config!(RAM, RAM, RAM, RAM, RAM, CharRom, KernelRom),
+            25 => config!(RAM, RAM, RAM, RAM, RAM, CharRom, RAM),
+            24 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
+            23 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
+            22 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
+            21 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
+            20 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
+            19 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
+            18 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
+            17 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
+            16 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
+            15 => config!(RAM, RAM, CartRomLow, BasicRom, RAM, IO, KernelRom),
+            14 => config!(RAM, RAM, RAM, RAM, RAM, IO, KernelRom),
+            13 => config!(RAM, RAM, RAM, RAM, RAM, IO, RAM),
+            12 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
+            11 => config!(RAM, RAM, CartRomLow, BasicRom, RAM, CharRom, KernelRom),
+            10 => config!(RAM, RAM, RAM, RAM, RAM, CharRom, KernelRom),
+            9 => config!(RAM, RAM, RAM, RAM, RAM, CharRom, RAM),
+            8 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
+            7 => config!(RAM, RAM, CartRomLow, CartRomHi, RAM, IO, KernelRom),
+            6 => config!(RAM, RAM, RAM, CartRomHi, RAM, IO, KernelRom),
+            5 => config!(RAM, RAM, RAM, RAM, RAM, IO, RAM),
+            4 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
+            3 => config!(RAM, RAM, CartRomLow, CartRomHi, RAM, CharRom, KernelRom),
+            2 => config!(RAM, RAM, RAM, CartRomHi, RAM, CharRom, KernelRom),
+            1 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
+            0 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
+            _ => assert!(combined < 32, "{}", combined),
         }
-        // KERNAL ROM
-        if hiram {
-            push_seg!(KernelRom, 0xe000, 0x2000);
-        }
-        // Deal with I/O | CHAR ROM | RAM
-        if !hiram && !loram {
-            // charen insignificant, map ram, i.e. no overlays
-        } else {
-            if charen {
-                // I/O devices appear in the CPU address space
-                push_seg!(VIC, 0xd000, 0x400);
-                push_seg!(SID, 0xd400, 0x400);
-                push_seg!(ColorRam, 0xd800, 0x400); // TODO wasn't this 4096?
-                push_seg!(CIA1, 0xdc00, 0x100);
-                push_seg!(CIA2, 0xdd00, 0x100);
-                push_seg!(IO1, 0xde00, 0x100);
-                push_seg!(IO2, 0xdf00, 0x100);
-            } else {
-                push_seg!(CharRom, 0xd000, 0x1000);
-            }
-        }
+
+        println!("segs = {:?}", self.banking);
 
         debug_assert!(
             {

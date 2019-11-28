@@ -66,6 +66,9 @@ fn main() {
         MemoryAreaKind::SID =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::VIC =>       vic20.clone(),
         MemoryAreaKind::CharRom =>   r2c_new!(rom::stock::CHAR_ROM) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::Unmapped =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CartRomLow =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CartRomHi =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
     };
 
     let mut mpu = mos6510::MOS6510::new(areas, ram.clone());
