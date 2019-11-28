@@ -99,13 +99,13 @@ impl<T: 'static> CIA<T> {
     }
 }
 
-struct DataPortBackend {}
-struct TimerBackend {}
-struct TimeOfDayBackend {}
+pub struct DataPortBackend {}
+pub struct TimerBackend {}
+pub struct TimeOfDayBackend {}
 
-struct SerialBusBackend {}
-struct UserportBackend {}
-struct RS232Backend {}
+pub struct SerialBusBackend {}
+pub struct UserportBackend {}
+pub struct RS232Backend {}
 
 impl TimerBackend {
     fn cycle(&mut self) {
