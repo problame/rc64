@@ -114,7 +114,6 @@ impl std::fmt::Display for Instr {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Instr(pub Op, pub Addr);
-type Opcode = u8;
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum DecodeErr {
@@ -263,6 +262,7 @@ mod tests {
         // NOTE: the website shows some absolute addresses which are in fact encoded as PCrelative
 
         use super::*;
+        use maplit::hashmap;
         use Addr::*;
         use Op::*;
         let tt = hashmap! {

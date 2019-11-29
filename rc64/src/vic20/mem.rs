@@ -131,13 +131,6 @@ impl<T: AsRef<[u8]>> MemoryView<T> {
         }
     }
 
-    #[inline]
-    pub fn read_data_into(&self, addr: U14, dst: &mut [u8]) {
-        dst.iter_mut()
-            .enumerate()
-            .for_each(|(idx, e)| *e = self.read_data(addr + idx))
-    }
-
     pub fn read(&self, addr: U14) -> U12 {
         let color = {
             let color_idx = u16::from(addr) & ((1 << 8) - 1);

@@ -99,11 +99,11 @@ use super::mos6510::{MemoryArea, WriteResult};
 
 /// These map the VIC20 Control Registers
 impl<T> MemoryArea for VIC20<T> {
-    fn read(&self, addr: u16) -> u8 {
+    fn read(&self, _addr: u16) -> u8 {
         0
         // unimplemented!()
     }
-    fn write(&mut self, addr: u16, v: u8) -> WriteResult {
+    fn write(&mut self, _addr: u16, _v: u8) -> WriteResult {
         WriteResult::Wrote
         // unimplemented!()
     }

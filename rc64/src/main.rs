@@ -1,7 +1,5 @@
 #[macro_use]
 extern crate strum_macros;
-#[macro_use]
-extern crate maplit;
 
 #[macro_use]
 extern crate bitflags;

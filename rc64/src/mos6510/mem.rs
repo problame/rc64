@@ -160,7 +160,7 @@ impl BankingState {
             v |= (game as u16) << 3;
             v |= (charen as u16) << 2;
             v |= (hiram as u16) << 1;
-            v |= (loram as u16);
+            v |= loram as u16;
             v
         };
         debug_assert!(combined < 32);
@@ -330,6 +330,9 @@ mod tests {
             MemoryAreaKind::SID => r2c_new!(MockArea(7, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
             MemoryAreaKind::VIC => r2c_new!(MockArea(8, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
             MemoryAreaKind::CharRom => r2c_new!(MockArea(9, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::Unmapped => r2c_new!(MockArea(10, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::CartRomHi => r2c_new!(MockArea(11, WriteResult::Ignored)) as R2C<dyn MemoryArea>,
+            MemoryAreaKind::CartRomLow => r2c_new!(MockArea(12, WriteResult::Ignored)) as R2C<dyn MemoryArea>,
         };
         let ram = r2c_new!(RAM::default());
 

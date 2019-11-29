@@ -38,7 +38,6 @@ struct Regs {
     p: Flags,
 }
 
-const STACK_TOP: u16 = 0x01ff;
 const STACK_BOTTOM: u16 = 0x0100;
 const RESET_VEC: u16 = 0xfffc;
 
@@ -524,7 +523,7 @@ impl MOS6510 {
             // BCC 	Branch if carry flag clear
             Instr(BCC, PCr(o)) => branch!(CARRY == 0, o, args),
             // BCS 	Branch if carry flag set
-            Instr(BCC, PCr(o)) => branch!(CARRY == 1, o, args),
+            Instr(BCS, PCr(o)) => branch!(CARRY == 1, o, args),
             // BEQ 	Branch if zero flag set
             Instr(BEQ, PCr(o)) => branch!(ZERO == 1, o, args),
             // BMI 	Branch if negative flag set
