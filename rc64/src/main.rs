@@ -16,7 +16,7 @@ mod backend {
     pub(super) mod fb_minifb;
 }
 
-use crate::cia::CIA;
+use crate::cia::{CIAKind, CIA};
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::utils::R2C;
@@ -52,8 +52,8 @@ fn main() {
         screen
     ));
 
-    let cia1 = r2c_new!(CIA::new_chip1());
-    let cia2 = r2c_new!(CIA::new_chip2(cia1.clone(), vic20.clone()));
+    let cia1 = r2c_new!(CIA::<()>::new(CIAKind::Chip1));
+    let cia2 = r2c_new!(CIA::new(CIAKind::Chip2 { vic: vic20.clone() }));
 
     use mos6510::*;
 
