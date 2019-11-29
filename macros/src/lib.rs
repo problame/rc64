@@ -81,3 +81,9 @@ pub fn gen_instr_match(_: TokenStream, item: TokenStream) -> TokenStream {
 
     f.to_token_stream().into()
 }
+
+// #[proc_macro_attribute]
+// pub fn gen_instr_match(_: TokenStream, item: TokenStream) -> TokenStream {
+//     let mut f: syn::ItemFn = parse_macro_input!(item);
+
+// }

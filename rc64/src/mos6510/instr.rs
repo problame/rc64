@@ -1,4 +1,4 @@
-#[derive(Debug, PartialEq, Eq, ToString, EnumString)]
+#[derive(Debug, PartialEq, Eq, ToString, EnumString, Clone, Copy)]
 #[strum(serialize_all = "snake_case")]
 pub enum Op {
     // Logical and Arithmetic
@@ -65,7 +65,7 @@ pub enum Op {
 }
 
 /// http://www.obelisk.me.uk/6502/addressing.html
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum Addr {
     Imp, // Implicit
     Acc,
@@ -112,7 +112,7 @@ impl std::fmt::Display for Instr {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Instr(pub Op, pub Addr);
 
 #[derive(Debug, Eq, PartialEq)]
@@ -248,8 +248,230 @@ pub fn decode_instr(peek: &[u8]) -> Result<(Instr, u8), DecodeErr> {
     Ok((i, len))
 }
 
+#[derive(Clone, Copy)]
+pub struct AddrCalcVars {
+    pub base: u16,
+    pub effective: u16,
+}
+
+impl AddrCalcVars {
+    #[inline]
+    const fn crosses_page(self) -> bool {
+        (self.base ^ self.effective) & (!0xFF) != 0
+    }
+}
+
+impl Instr {
+    pub fn cycles(&self, acv: Option<AddrCalcVars>) -> usize {
+        let (num_cycles, boundary_crossing) = instr_cycles(self);
+        let additional_cycles = match (
+            boundary_crossing,
+            acv.map(|a| a.crosses_page()).unwrap_or(false),
+        ) {
+            (BoundaryCrossingBehavior::NoAdditionalCycle, _) => 0,
+            (BoundaryCrossingBehavior::AddOneCycle, true) => 1,
+            (BoundaryCrossingBehavior::AddOneCycle, false) => 0,
+        };
+        num_cycles + additional_cycles
+    }
+}
+
+enum BoundaryCrossingBehavior {
+    NoAdditionalCycle,
+    AddOneCycle,
+}
+
+fn instr_cycles(instr: &Instr) -> (usize, BoundaryCrossingBehavior) {
+    use BoundaryCrossingBehavior::*;
+    match instr {
+        // generated using xfrm_timing_table.rs
+        Instr(Op::BRK, Addr::Imp) => (7, NoAdditionalCycle),
+        Instr(Op::BRK, Addr::Acc) => (7, NoAdditionalCycle),
+        Instr(Op::ORA, Addr::IzX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::ORA, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::ASL, Addr::Zpi(_)) => (5, NoAdditionalCycle),
+        Instr(Op::PHP, Addr::Imp) => (3, NoAdditionalCycle),
+        Instr(Op::PHP, Addr::Acc) => (3, NoAdditionalCycle),
+        Instr(Op::ORA, Addr::Imm(_)) => (2, NoAdditionalCycle),
+        Instr(Op::ASL, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::ASL, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::ORA, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::ASL, Addr::Abs(_)) => (6, NoAdditionalCycle),
+        Instr(Op::BPL, Addr::PCr(_)) => (2, AddOneCycle),
+        Instr(Op::ORA, Addr::IzY(_)) => (5, AddOneCycle),
+        Instr(Op::ORA, Addr::ZpX(_)) => (4, NoAdditionalCycle),
+        Instr(Op::ASL, Addr::ZpX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::CLC, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::CLC, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::ORA, Addr::AbY(_)) => (4, AddOneCycle),
+        Instr(Op::ORA, Addr::AbX(_)) => (4, AddOneCycle),
+        Instr(Op::ASL, Addr::AbX(_)) => (7, NoAdditionalCycle),
+        Instr(Op::JSR, Addr::Abs(_)) => (6, NoAdditionalCycle),
+        Instr(Op::AND, Addr::IzX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::BIT, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::AND, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::ROL, Addr::Zpi(_)) => (5, NoAdditionalCycle),
+        Instr(Op::PLP, Addr::Imp) => (4, NoAdditionalCycle),
+        Instr(Op::PLP, Addr::Acc) => (4, NoAdditionalCycle),
+        Instr(Op::AND, Addr::Imm(_)) => (2, NoAdditionalCycle),
+        Instr(Op::ROL, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::ROL, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::BIT, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::AND, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::ROL, Addr::Abs(_)) => (6, NoAdditionalCycle),
+        Instr(Op::BMI, Addr::PCr(_)) => (2, AddOneCycle),
+        Instr(Op::AND, Addr::IzY(_)) => (5, AddOneCycle),
+        Instr(Op::AND, Addr::ZpX(_)) => (4, NoAdditionalCycle),
+        Instr(Op::ROL, Addr::ZpX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::SEC, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::SEC, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::AND, Addr::AbY(_)) => (4, AddOneCycle),
+        Instr(Op::AND, Addr::AbX(_)) => (4, AddOneCycle),
+        Instr(Op::ROL, Addr::AbX(_)) => (7, NoAdditionalCycle),
+        Instr(Op::RTI, Addr::Imp) => (6, NoAdditionalCycle),
+        Instr(Op::RTI, Addr::Acc) => (6, NoAdditionalCycle),
+        Instr(Op::EOR, Addr::IzX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::EOR, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::LSR, Addr::Zpi(_)) => (5, NoAdditionalCycle),
+        Instr(Op::PHA, Addr::Imp) => (3, NoAdditionalCycle),
+        Instr(Op::PHA, Addr::Acc) => (3, NoAdditionalCycle),
+        Instr(Op::EOR, Addr::Imm(_)) => (2, NoAdditionalCycle),
+        Instr(Op::LSR, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::LSR, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::JMP, Addr::Abs(_)) => (3, NoAdditionalCycle),
+        Instr(Op::EOR, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::LSR, Addr::Abs(_)) => (6, NoAdditionalCycle),
+        Instr(Op::BVC, Addr::PCr(_)) => (2, AddOneCycle),
+        Instr(Op::EOR, Addr::IzY(_)) => (5, AddOneCycle),
+        Instr(Op::EOR, Addr::ZpX(_)) => (4, NoAdditionalCycle),
+        Instr(Op::LSR, Addr::ZpX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::CLI, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::CLI, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::EOR, Addr::AbY(_)) => (4, AddOneCycle),
+        Instr(Op::EOR, Addr::AbX(_)) => (4, AddOneCycle),
+        Instr(Op::LSR, Addr::AbX(_)) => (7, NoAdditionalCycle),
+        Instr(Op::RTS, Addr::Imp) => (6, NoAdditionalCycle),
+        Instr(Op::RTS, Addr::Acc) => (6, NoAdditionalCycle),
+        Instr(Op::ADC, Addr::IzX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::ADC, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::ROR, Addr::Zpi(_)) => (5, NoAdditionalCycle),
+        Instr(Op::PLA, Addr::Imp) => (4, NoAdditionalCycle),
+        Instr(Op::PLA, Addr::Acc) => (4, NoAdditionalCycle),
+        Instr(Op::ADC, Addr::Imm(_)) => (2, NoAdditionalCycle),
+        Instr(Op::ROR, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::ROR, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::JMP, Addr::Ind(_)) => (5, NoAdditionalCycle),
+        Instr(Op::ADC, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::ROR, Addr::Abs(_)) => (6, NoAdditionalCycle),
+        Instr(Op::BVS, Addr::PCr(_)) => (2, AddOneCycle),
+        Instr(Op::ADC, Addr::IzY(_)) => (5, AddOneCycle),
+        Instr(Op::ADC, Addr::ZpX(_)) => (4, NoAdditionalCycle),
+        Instr(Op::ROR, Addr::ZpX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::SEI, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::SEI, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::ADC, Addr::AbY(_)) => (4, AddOneCycle),
+        Instr(Op::ADC, Addr::AbX(_)) => (4, AddOneCycle),
+        Instr(Op::ROR, Addr::AbX(_)) => (7, NoAdditionalCycle),
+        Instr(Op::STA, Addr::IzX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::STY, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::STA, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::STX, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::DEY, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::DEY, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::TXA, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::TXA, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::STY, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::STA, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::STX, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::BCC, Addr::PCr(_)) => (2, AddOneCycle),
+        Instr(Op::STA, Addr::IzY(_)) => (6, NoAdditionalCycle),
+        Instr(Op::STY, Addr::ZpX(_)) => (4, NoAdditionalCycle),
+        Instr(Op::STA, Addr::ZpX(_)) => (4, NoAdditionalCycle),
+        Instr(Op::STX, Addr::ZpY(_)) => (4, NoAdditionalCycle),
+        Instr(Op::TYA, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::TYA, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::STA, Addr::AbY(_)) => (5, NoAdditionalCycle),
+        Instr(Op::TXS, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::TXS, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::STA, Addr::AbX(_)) => (5, NoAdditionalCycle),
+        Instr(Op::LDY, Addr::Imm(_)) => (2, NoAdditionalCycle),
+        Instr(Op::LDA, Addr::IzX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::LDX, Addr::Imm(_)) => (2, NoAdditionalCycle),
+        Instr(Op::LDY, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::LDA, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::LDX, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::TAY, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::TAY, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::LDA, Addr::Imm(_)) => (2, NoAdditionalCycle),
+        Instr(Op::TAX, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::TAX, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::LDY, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::LDA, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::LDX, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::BCS, Addr::PCr(_)) => (2, AddOneCycle),
+        Instr(Op::LDA, Addr::IzY(_)) => (5, AddOneCycle),
+        Instr(Op::LDY, Addr::ZpX(_)) => (4, NoAdditionalCycle),
+        Instr(Op::LDA, Addr::ZpX(_)) => (4, NoAdditionalCycle),
+        Instr(Op::LDX, Addr::ZpY(_)) => (4, NoAdditionalCycle),
+        Instr(Op::CLV, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::CLV, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::LDA, Addr::AbY(_)) => (4, AddOneCycle),
+        Instr(Op::TSX, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::TSX, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::LDY, Addr::AbX(_)) => (4, AddOneCycle),
+        Instr(Op::LDA, Addr::AbX(_)) => (4, AddOneCycle),
+        Instr(Op::LDX, Addr::AbY(_)) => (4, AddOneCycle),
+        Instr(Op::CPY, Addr::Imm(_)) => (2, NoAdditionalCycle),
+        Instr(Op::CMP, Addr::IzX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::CPY, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::CMP, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::DEC, Addr::Zpi(_)) => (5, NoAdditionalCycle),
+        Instr(Op::INY, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::INY, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::CMP, Addr::Imm(_)) => (2, NoAdditionalCycle),
+        Instr(Op::DEX, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::DEX, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::CPY, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::CMP, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::DEC, Addr::Abs(_)) => (6, NoAdditionalCycle),
+        Instr(Op::BNE, Addr::PCr(_)) => (2, AddOneCycle),
+        Instr(Op::CMP, Addr::IzY(_)) => (5, AddOneCycle),
+        Instr(Op::CMP, Addr::ZpX(_)) => (4, NoAdditionalCycle),
+        Instr(Op::DEC, Addr::ZpX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::CLD, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::CLD, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::CMP, Addr::AbY(_)) => (4, AddOneCycle),
+        Instr(Op::CMP, Addr::AbX(_)) => (4, AddOneCycle),
+        Instr(Op::DEC, Addr::AbX(_)) => (7, NoAdditionalCycle),
+        Instr(Op::CPX, Addr::Imm(_)) => (2, NoAdditionalCycle),
+        Instr(Op::SBC, Addr::IzX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::CPX, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::SBC, Addr::Zpi(_)) => (3, NoAdditionalCycle),
+        Instr(Op::INC, Addr::Zpi(_)) => (5, NoAdditionalCycle),
+        Instr(Op::INX, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::INX, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::SBC, Addr::Imm(_)) => (2, NoAdditionalCycle),
+        Instr(Op::NOP, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::NOP, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::CPX, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::SBC, Addr::Abs(_)) => (4, NoAdditionalCycle),
+        Instr(Op::INC, Addr::Abs(_)) => (6, NoAdditionalCycle),
+        Instr(Op::BEQ, Addr::PCr(_)) => (2, AddOneCycle),
+        Instr(Op::SBC, Addr::IzY(_)) => (5, AddOneCycle),
+        Instr(Op::SBC, Addr::ZpX(_)) => (4, NoAdditionalCycle),
+        Instr(Op::INC, Addr::ZpX(_)) => (6, NoAdditionalCycle),
+        Instr(Op::SED, Addr::Imp) => (2, NoAdditionalCycle),
+        Instr(Op::SED, Addr::Acc) => (2, NoAdditionalCycle),
+        Instr(Op::SBC, Addr::AbY(_)) => (4, AddOneCycle),
+        Instr(Op::SBC, Addr::AbX(_)) => (4, AddOneCycle),
+        Instr(Op::INC, Addr::AbX(_)) => (7, NoAdditionalCycle),
+        _ => panic!("invalid instruction {:?}", instr),
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     pub const BASIC_ROM: &'static [u8] = include_bytes!("../../rsrc/basic_rom.img");
 
@@ -261,7 +483,6 @@ mod tests {
         //
         // NOTE: the website shows some absolute addresses which are in fact encoded as PCrelative
 
-        use super::*;
         use maplit::hashmap;
         use Addr::*;
         use Op::*;
@@ -279,5 +500,29 @@ mod tests {
             let (dec, _) = dec.unwrap();
             assert_eq!(dec, exp);
         }
+    }
+
+    #[test]
+    fn test_page_boundary_crossing() {
+        use Addr::*;
+        use Op::*;
+        // https://www.c64-wiki.com/wiki/LDA
+        use AddrCalcVars as ACV;
+        assert_eq!(
+            4,
+            Instr(LDA, AbX(0x1234)).cycles(Some(ACV {
+                base: 0x1234,
+                effective: 0x1234
+            })),
+            "no crossing"
+        );
+        assert_eq!(
+            5,
+            Instr(LDA, AbX(0x1234)).cycles(Some(ACV {
+                base: 0x1234,
+                effective: 0x1300
+            })),
+            "crossing"
+        );
     }
 }

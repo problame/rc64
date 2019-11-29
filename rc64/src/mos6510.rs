@@ -143,9 +143,14 @@ impl Regs {
 
 use instr::*;
 
+#[derive(PartialEq, Eq, Debug, Display, Clone, Copy)]
 enum State {
     Reset,
-    Running,
+    BeginInstr,
+    ExecInstr {
+        instr: Instr,
+        remaining_cycles: usize,
+    },
 }
 
 impl MOS6510 {
@@ -160,20 +165,49 @@ impl MOS6510 {
     }
 
     pub fn cycle(&mut self) {
+        println!("cycle {:?}", self.state);
+        let mut instrbuf = [0 as u8; 3];
         match self.state {
-            State::Reset => {
-                self.state = State::Running;
-                self.apply_instr(Instr(Op::JMP, Addr::Ind(RESET_VEC)), None);
+            State::ExecInstr {
+                ref mut remaining_cycles,
+                ..
+            } => {
+                *remaining_cycles = remaining_cycles.saturating_sub(1);
+                if *remaining_cycles == 0 {
+                    println!("instruction complete");
+                    self.state = State::BeginInstr;
+                }
                 return;
             }
-            State::Running => (), // fallthrough
-        };
+            State::Reset => {
+                instrbuf = [0x6C, (RESET_VEC & 0xFF) as u8, (RESET_VEC >> 8) as u8];
+                self.state = State::BeginInstr;
+                // fallthrough
+            }
+            State::BeginInstr => {
+                self.mem.read_one_to_three(self.reg.pc, &mut instrbuf[..]);
+            }
+        }
 
-        println!("cycle pc = {:x} {}", self.reg.pc, self.reg.pc);
-        let mut buf = [0; 3];
-        self.mem.read_one_to_three(self.reg.pc, &mut buf);
-        match instr::decode_instr(&buf) {
-            Ok((instr, len)) => self.apply_instr(instr, self.reg.pc.checked_add(len as u16)),
+        match instr::decode_instr(&instrbuf[..]) {
+            Ok((instr, len)) => {
+                self.apply_instr(instr, self.reg.pc.checked_add(len as u16));
+                match self.state {
+                    State::ExecInstr {
+                        ref mut remaining_cycles,
+                        ..
+                    } => {
+                        assert!(
+                            *remaining_cycles >= 2,
+                            "remaining_cycles = {} (minimum cycle count is 2)",
+                            remaining_cycles
+                        );
+                        // we already did one cycle in apply_instr
+                        *remaining_cycles -= 1;
+                    }
+                    s => panic!("apply_instr set invalid state {:?}", s),
+                }
+            }
             Err(e) => panic!("instruction decode error: {:?}", e),
         }
     }
@@ -205,22 +239,30 @@ impl MOS6510 {
     }
 
     fn apply_instr(&mut self, instr: Instr, mut next_pc: Option<u16>) {
-        println!("pc={:x} {}", self.reg.pc, instr);
+        println!("apply instr pc={:x} {}", self.reg.pc, instr);
         use instr::Addr::*;
         use instr::Op::*;
+        macro_rules! ea {
+            ($base:expr, $effective:expr) => {{
+                Some(AddrCalcVars {
+                    base: $base,
+                    effective: $effective,
+                })
+            }};
+        }
 
-        let effective_addr: Option<u16> = {
+        let effective_addr: Option<AddrCalcVars> = {
             match instr.1 {
                 Imp | Acc => None,
                 Imm(_) => None,
-                Zpi(v) => Some(v as u16),
-                ZpX(v) => Some(v.overflowing_add(self.reg.x).0 as u16),
-                ZpY(v) => Some(v.overflowing_add(self.reg.y).0 as u16),
+                Zpi(v) => ea!(v as u16, v as u16),
+                ZpX(v) => ea!(v as u16, v.overflowing_add(self.reg.x).0 as u16),
+                ZpY(v) => ea!(v as u16, v.overflowing_add(self.reg.y).0 as u16),
                 PCr(_) => None, // TODO 2 byte offset?
-                Abs(v) => Some(v),
-                AbX(v) => Some(v.overflowing_add(self.reg.x as u16).0 as u16),
-                AbY(v) => Some(v.overflowing_add(self.reg.y as u16).0 as u16),
-                Ind(v) => Some(self.mem.read_u16(v)),
+                Abs(v) => ea!(v, v),
+                AbX(v) => ea!(v, v.overflowing_add(self.reg.x as u16).0 as u16),
+                AbY(v) => ea!(v, v.overflowing_add(self.reg.y as u16).0 as u16),
+                Ind(v) => ea!(v, self.mem.read_u16(v)),
                 IzX(i) => {
                     // http://archive.6502.org/datasheets/mos_6501-6505_mpu_preliminary_aug_1975.pdf
                     // The second byte of the instruction is added to the contents of the X index register,
@@ -234,7 +276,7 @@ impl MOS6510 {
                     } else {
                         self.mem.read_u16(effective_zp_addr as u16)
                     };
-                    Some(effective_addr)
+                    ea!(effective_addr, effective_addr) // indirectX not affected by page boundaries
                 }
                 IzY(i) => {
                     // INDIRECT INDEXED ADDRESSING
@@ -256,12 +298,20 @@ impl MOS6510 {
                     };
                     let (higher_ea, _) = next_page_zero_location_value.overflowing_add(carry);
                     let ea = ((higher_ea as u16) << 8) | (lower_ea as u16);
-                    Some(ea)
+                    ea!((next_page_zero_location_value as u16) << 8, ea) // indirectY _IS_ affected by page boundaries
+                                                                         // => if carry == 0, the CPU can use next_page_zero_location_value as MSB without adding
+                                                                         //    carry to it => saves one cycle
                 }
             }
         };
 
-        let effective_addr_load = effective_addr.map(|a| self.mem.read(a));
+        let effective_addr_load = effective_addr.map(|a| self.mem.read(a.effective));
+
+        debug_assert_eq!(self.state, State::BeginInstr);
+        self.state = State::ExecInstr {
+            remaining_cycles: instr.cycles(effective_addr),
+            instr: instr.clone(),
+        };
 
         struct InstrMatchArgs<'a> {
             instr: Instr,
@@ -276,7 +326,7 @@ impl MOS6510 {
         instr_match(InstrMatchArgs {
             instr,
             reg: &mut self.reg,
-            effective_addr,
+            effective_addr: effective_addr.map(|v| v.effective),
             effective_addr_load,
             next_pc: &mut next_pc,
             mem: &mut self.mem,
