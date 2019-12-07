@@ -52,16 +52,8 @@ pub struct VIC20<T> {
 }
 
 impl<T: AsRef<[u8]>> VIC20<T> {
-    pub fn new(
-        char_rom: ROM<T>,
-        ram: R2C<RAM>,
-        color_ram: R2C<ColorRAM>,
-        screen: Box<dyn ScreenBackend>,
-    ) -> Self {
-        VIC20 {
-            mem: MemoryView::new(char_rom, ram, color_ram),
-            screen,
-        }
+    pub fn new(char_rom: ROM<T>, ram: R2C<RAM>, color_ram: R2C<ColorRAM>, screen: Box<dyn ScreenBackend>) -> Self {
+        VIC20 { mem: MemoryView::new(char_rom, ram, color_ram), screen }
     }
 
     pub fn cycle(&mut self) {
@@ -76,20 +68,10 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             let char_row = y / 8;
             for x in (0..SCREEN_WIDTH).step_by(8) {
                 let char_col = x / 8;
-                let (color, ch) = self
-                    .mem
-                    .read(U14::try_from(0x400 + (char_row * 40 + char_col)).unwrap())
-                    .into();
+                let (color, ch) = self.mem.read(U14::try_from(0x400 + (char_row * 40 + char_col)).unwrap()).into();
                 // find ch in char rom
-                let bm = self
-                    .mem
-                    .read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
-                self.screen.set_char_line(
-                    Point(x, y),
-                    Color::try_from(color).unwrap(),
-                    Color::try_from(0).unwrap(),
-                    bm,
-                );
+                let bm = self.mem.read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
+                self.screen.set_char_line(Point(x, y), Color::try_from(color).unwrap(), Color::try_from(0).unwrap(), bm);
             }
         }
     }

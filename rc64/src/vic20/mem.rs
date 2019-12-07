@@ -123,12 +123,7 @@ pub(super) enum BankingState {
 
 impl<T: AsRef<[u8]>> MemoryView<T> {
     pub fn new(char_rom: ROM<T>, ram: R2C<RAM>, color_ram: R2C<ColorRAM>) -> Self {
-        MemoryView {
-            banking_state: BankingState::Bank0,
-            char_rom,
-            ram,
-            color_ram,
-        }
+        MemoryView { banking_state: BankingState::Bank0, char_rom, ram, color_ram }
     }
 
     pub fn read(&self, addr: U14) -> U12 {
@@ -142,15 +137,10 @@ impl<T: AsRef<[u8]>> MemoryView<T> {
 
     #[inline]
     pub fn read_data(&self, addr: U14) -> u8 {
-        if self.char_rom_is_mapped()
-            && CHAR_ROM_BEGIN <= addr
-            && addr - CHAR_ROM_BEGIN < CHAR_ROM_LEN
-        {
+        if self.char_rom_is_mapped() && CHAR_ROM_BEGIN <= addr && addr - CHAR_ROM_BEGIN < CHAR_ROM_LEN {
             self.char_rom.read(u16::from(addr - CHAR_ROM_BEGIN))
         } else {
-            self.ram
-                .borrow()
-                .read(addr + RAM_OFFSET_MAP[self.banking_state])
+            self.ram.borrow().read(addr + RAM_OFFSET_MAP[self.banking_state])
         }
     }
 

@@ -3,9 +3,7 @@ pub struct RAM {
 }
 impl Default for RAM {
     fn default() -> Self {
-        RAM {
-            content: [0; 0x10000],
-        }
+        RAM { content: [0; 0x10000] }
     }
 }
 

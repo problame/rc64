@@ -31,8 +31,7 @@ impl mos6510::MemoryArea for UnimplMemoryArea {
 
 fn main() {
     let kernal = if std::env::args().len() == 2 {
-        let kernal_img = std::fs::read(std::env::args().nth(1).unwrap())
-            .expect("read custom kernal image failed");
+        let kernal_img = std::fs::read(std::env::args().nth(1).unwrap()).expect("read custom kernal image failed");
         r2c_new!(rom::ROM::from(kernal_img)) as R2C<dyn MemoryArea>
     } else {
         r2c_new!(rom::stock::KERNAL) as R2C<dyn MemoryArea>
@@ -43,12 +42,7 @@ fn main() {
 
     let screen = Box::new(backend::fb_minifb::Minifb::new());
 
-    let vic20 = r2c_new!(vic20::VIC20::new(
-        rom::stock::CHAR_ROM,
-        ram.clone(),
-        color_ram.clone(),
-        screen
-    ));
+    let vic20 = r2c_new!(vic20::VIC20::new(rom::stock::CHAR_ROM, ram.clone(), color_ram.clone(), screen));
 
     use mos6510::*;
 
@@ -73,9 +67,7 @@ fn main() {
 
     use spin_sleep::LoopHelper;
 
-    let mut loop_helper = LoopHelper::builder()
-        .report_interval_s(0.5)
-        .build_with_target_rate(1_000.0f64); // scale by 1000
+    let mut loop_helper = LoopHelper::builder().report_interval_s(0.5).build_with_target_rate(1_000.0f64); // scale by 1000
 
     let mut cycles = 0;
     loop {
