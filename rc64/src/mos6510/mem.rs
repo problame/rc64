@@ -12,11 +12,7 @@ pub struct MemoryView {
 impl MemoryView {
     pub fn new(memory_areas: Areas, ram: R2C<RAM>) -> Self {
         let banking_state = BankingState::default();
-        MemoryView {
-            banking_state,
-            memory_areas,
-            ram,
-        }
+        MemoryView { banking_state, memory_areas, ram }
     }
 
     pub fn read_u16(&self, addr: u16) -> u16 {
@@ -55,11 +51,9 @@ impl MemoryView {
 
     pub fn write(&mut self, addr: u16, val: u8) {
         if addr == 0 {
-            self.banking_state
-                .update(BankingStateUpdate::CpuControlLines(val))
+            self.banking_state.update(BankingStateUpdate::CpuControlLines(val))
         } else if addr == 1 {
-            self.banking_state
-                .update(BankingStateUpdate::ExpansionPort(val))
+            self.banking_state.update(BankingStateUpdate::ExpansionPort(val))
         }
 
         for segment in self.banking_state.iter() {
@@ -117,11 +111,7 @@ enum BankingStateUpdate {
 
 impl Default for BankingState {
     fn default() -> BankingState {
-        let mut b = BankingState {
-            cpu_control_lines: 0b00_00_01_11,
-            expansion_port: 0b00_00_00_11,
-            banking: Vec::with_capacity(20),
-        };
+        let mut b = BankingState { cpu_control_lines: 0b00_00_01_11, expansion_port: 0b00_00_00_11, banking: Vec::with_capacity(20) };
         b.update_banking();
         b
     }
@@ -178,11 +168,7 @@ impl BankingState {
             }};
             ($kind:expr, $base:expr, $end_incl:expr ) => {
                 debug_assert!($end_incl > $base);
-                self.banking.push(Segment {
-                    base: $base,
-                    len: $end_incl - $base,
-                    kind: $kind,
-                })
+                self.banking.push(Segment { base: $base, len: $end_incl - $base, kind: $kind })
             };
         }
         macro_rules! config {
@@ -273,15 +259,7 @@ struct Segment {
 
 impl Segment {
     fn relative_address(&self, absolute_addr: u16) -> Option<u16> {
-        absolute_addr
-            .checked_sub(self.base)
-            .and_then(|relative_addr| {
-                if relative_addr < self.len {
-                    Some(relative_addr)
-                } else {
-                    None
-                }
-            })
+        absolute_addr.checked_sub(self.base).and_then(|relative_addr| if relative_addr < self.len { Some(relative_addr) } else { None })
     }
 }
 

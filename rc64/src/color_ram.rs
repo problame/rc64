@@ -3,9 +3,7 @@ pub struct ColorRAM {
 }
 impl Default for ColorRAM {
     fn default() -> Self {
-        ColorRAM {
-            content: [0xff; 0x400],
-        }
+        ColorRAM { content: [0xff; 0x400] }
     }
 }
 

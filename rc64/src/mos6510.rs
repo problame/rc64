@@ -43,14 +43,7 @@ const RESET_VEC: u16 = 0xfffc;
 
 impl Default for Regs {
     fn default() -> Self {
-        Regs {
-            pc: 0,
-            sp: 0x0,
-            a: 0,
-            x: 0,
-            y: 0,
-            p: Flags::default(),
-        }
+        Regs { pc: 0, sp: 0x0, a: 0, x: 0, y: 0, p: Flags::default() }
     }
 }
 
@@ -147,31 +140,21 @@ use instr::*;
 enum State {
     Reset,
     BeginInstr,
-    ExecInstr {
-        instr: Instr,
-        remaining_cycles: usize,
-    },
+    ExecInstr { instr: Instr, remaining_cycles: usize },
 }
 
 impl MOS6510 {
     pub fn new(areas: Areas, ram: Rc<RefCell<RAM>>) -> Self {
         let mem = MemoryView::new(areas, ram);
         let reg = Regs::default();
-        MOS6510 {
-            mem,
-            reg,
-            state: State::Reset,
-        }
+        MOS6510 { mem, reg, state: State::Reset }
     }
 
     pub fn cycle(&mut self) {
         println!("cycle {:?}", self.state);
         let mut instrbuf = [0 as u8; 3];
         match self.state {
-            State::ExecInstr {
-                ref mut remaining_cycles,
-                ..
-            } => {
+            State::ExecInstr { ref mut remaining_cycles, .. } => {
                 *remaining_cycles = remaining_cycles.saturating_sub(1);
                 if *remaining_cycles == 0 {
                     println!("instruction complete");
@@ -193,15 +176,8 @@ impl MOS6510 {
             Ok((instr, len)) => {
                 self.apply_instr(instr, self.reg.pc.checked_add(len as u16));
                 match self.state {
-                    State::ExecInstr {
-                        ref mut remaining_cycles,
-                        ..
-                    } => {
-                        assert!(
-                            *remaining_cycles >= 2,
-                            "remaining_cycles = {} (minimum cycle count is 2)",
-                            remaining_cycles
-                        );
+                    State::ExecInstr { ref mut remaining_cycles, .. } => {
+                        assert!(*remaining_cycles >= 2, "remaining_cycles = {} (minimum cycle count is 2)", remaining_cycles);
                         // we already did one cycle in apply_instr
                         *remaining_cycles -= 1;
                     }
@@ -244,10 +220,7 @@ impl MOS6510 {
         use instr::Op::*;
         macro_rules! ea {
             ($base:expr, $effective:expr) => {{
-                Some(AddrCalcVars {
-                    base: $base,
-                    effective: $effective,
-                })
+                Some(AddrCalcVars { base: $base, effective: $effective })
             }};
         }
 
@@ -308,10 +281,7 @@ impl MOS6510 {
         let effective_addr_load = effective_addr.map(|a| self.mem.read(a.effective));
 
         debug_assert_eq!(self.state, State::BeginInstr);
-        self.state = State::ExecInstr {
-            remaining_cycles: instr.cycles(effective_addr),
-            instr: instr.clone(),
-        };
+        self.state = State::ExecInstr { remaining_cycles: instr.cycles(effective_addr), instr: instr.clone() };
 
         struct InstrMatchArgs<'a> {
             instr: Instr,

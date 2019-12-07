@@ -118,11 +118,7 @@ pub struct Instr(pub Op, pub Addr);
 #[derive(Debug, Eq, PartialEq)]
 pub enum DecodeErr {
     InvalidOpcode(u8),
-    PeekLength {
-        opcode: u8,
-        expected_length: u8,
-        available_peek: usize,
-    },
+    PeekLength { opcode: u8, expected_length: u8, available_peek: usize },
 }
 
 #[allow(clippy::cognitive_complexity)]
@@ -138,11 +134,7 @@ pub fn decode_instr(peek: &[u8]) -> Result<(Instr, u8), DecodeErr> {
         ($n:expr) => {{
             len += $n;
             if peek.len() < len as usize {
-                return Err(DecodeErr::PeekLength {
-                    opcode: peek[0],
-                    expected_length: len,
-                    available_peek: peek.len(),
-                });
+                return Err(DecodeErr::PeekLength { opcode: peek[0], expected_length: len, available_peek: peek.len() });
             }
         }};
     }
@@ -264,10 +256,7 @@ impl AddrCalcVars {
 impl Instr {
     pub fn cycles(&self, acv: Option<AddrCalcVars>) -> usize {
         let (num_cycles, boundary_crossing) = instr_cycles(self);
-        let additional_cycles = match (
-            boundary_crossing,
-            acv.map(|a| a.crosses_page()).unwrap_or(false),
-        ) {
+        let additional_cycles = match (boundary_crossing, acv.map(|a| a.crosses_page()).unwrap_or(false)) {
             (BoundaryCrossingBehavior::NoAdditionalCycle, _) => 0,
             (BoundaryCrossingBehavior::AddOneCycle, true) => 1,
             (BoundaryCrossingBehavior::AddOneCycle, false) => 0,
@@ -508,21 +497,7 @@ mod tests {
         use Op::*;
         // https://www.c64-wiki.com/wiki/LDA
         use AddrCalcVars as ACV;
-        assert_eq!(
-            4,
-            Instr(LDA, AbX(0x1234)).cycles(Some(ACV {
-                base: 0x1234,
-                effective: 0x1234
-            })),
-            "no crossing"
-        );
-        assert_eq!(
-            5,
-            Instr(LDA, AbX(0x1234)).cycles(Some(ACV {
-                base: 0x1234,
-                effective: 0x1300
-            })),
-            "crossing"
-        );
+        assert_eq!(4, Instr(LDA, AbX(0x1234)).cycles(Some(ACV { base: 0x1234, effective: 0x1234 })), "no crossing");
+        assert_eq!(5, Instr(LDA, AbX(0x1234)).cycles(Some(ACV { base: 0x1234, effective: 0x1300 })), "crossing");
     }
 }

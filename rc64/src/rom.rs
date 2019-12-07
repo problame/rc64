@@ -26,17 +26,13 @@ impl<T: AsRef<[u8]>> MemoryArea for &'_ mut ROM<T> {
 
 impl From<Vec<u8>> for ROM<Vec<u8>> {
     fn from(bytes: Vec<u8>) -> Self {
-        ROM {
-            content: bytes.clone(),
-        }
+        ROM { content: bytes.clone() }
     }
 }
 
 impl From<&[u8]> for ROM<Vec<u8>> {
     fn from(bytes: &[u8]) -> Self {
-        ROM {
-            content: bytes.to_owned(),
-        }
+        ROM { content: bytes.to_owned() }
     }
 }
 
@@ -44,13 +40,7 @@ pub mod stock {
     use super::*;
 
     // FIXME include_bytes
-    pub const BASIC_ROM: ROM<&'static [u8]> = ROM {
-        content: include_bytes!("../rsrc/basic_rom.img"),
-    };
-    pub const KERNAL: ROM<&'static [u8]> = ROM {
-        content: include_bytes!("../rsrc/kernal.img"),
-    };
-    pub const CHAR_ROM: ROM<&'static [u8]> = ROM {
-        content: include_bytes!("../rsrc/char_rom.img"),
-    };
+    pub const BASIC_ROM: ROM<&'static [u8]> = ROM { content: include_bytes!("../rsrc/basic_rom.img") };
+    pub const KERNAL: ROM<&'static [u8]> = ROM { content: include_bytes!("../rsrc/kernal.img") };
+    pub const CHAR_ROM: ROM<&'static [u8]> = ROM { content: include_bytes!("../rsrc/char_rom.img") };
 }
