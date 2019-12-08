@@ -590,9 +590,40 @@ pub struct SerialShiftBackend {}
 /// allows a multi-interrupt system to read one bit and see if the source of a particular interrupt
 /// was CIA #1.  You should note, however, that reading this register clears it, so you should
 /// preserve its contents in RAM if you want to test more than one bit.
-pub enum IRQBackend {
-    CIA1 {},
-    CIA2 {},
+#[derive(Default)]
+pub struct InterruptBackend {
+    pub occured: InterruptSources,
+    pub interrupted: bool,
+    pub enabled: InterruptSources,
+}
+
+bitflags! {
+    #[derive(Default)]
+    pub struct InterruptSources: u8 {
+        const TIMER_A    = 0b00000001;
+        const TIMER_B    = 0b00000010;
+        const TOD_ALARM  = 0b00000100;
+        const SERIAL_REG = 0b00001000;
+        const FLAG_LINE  = 0b00010000;
+    }
+}
+
+impl InterruptBackend {
+    pub fn trigger(&mut self, kind: InterruptSources) -> Option<Interrupt> {
+        self.occured.insert(kind);
+        if self.enabled.contains(kind) {
+            // TODO Should this be set even if IRQs are masked in the CPU?
+            self.interrupted = true;
+            Some(Interrupt::IRQ)
+        } else {
+            None
+        }
+    }
+}
+
+pub enum Interrupt {
+    IRQ,
+    NMI,
 }
 
 /// Data Port A is used for communication with the Serial Bus.  Bits 5 and

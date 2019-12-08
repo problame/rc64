@@ -1,6 +1,8 @@
 mod backends;
 mod registers;
 
+pub use backends::InterruptBackend;
+
 use crate::mos6510;
 use crate::utils::R2C;
 use crate::vic20::VIC20;
@@ -64,10 +66,10 @@ pub enum CIAKind<T> {
 
 // TODO Remove this 'static
 impl<T: 'static> CIA<T> {
-    pub fn new(kind: CIAKind<T>) -> Self {
+    pub fn new(kind: CIAKind<T>, interrupt_backend: R2C<InterruptBackend>) -> Self {
         use CIAKind::*;
 
-        let (data_port, irq) = match kind {
+        let (data_port, int_ctrl) = match kind {
             Chip1 => (
                 r2c_new!(DataPortBackend::CIA1 {
                     keyboard: KeyboardBackend,
@@ -76,16 +78,11 @@ impl<T: 'static> CIA<T> {
                     lightpen: LigthpenBackend,
                     paddles: PaddlesBackend,
                 }),
-                r2c_new!(IRQBackend::CIA1 {}),
+                InterruptControl::IRQ(interrupt_backend),
             ),
             Chip2 { vic } => (
-                r2c_new!(DataPortBackend::CIA2 {
-                    vic,
-                    serial_bus: SerialBusBackend {},
-                    rs232: RS232Backend {},
-                    userport: UserportBackend {},
-                }),
-                r2c_new!(IRQBackend::CIA2 {}),
+                r2c_new!(DataPortBackend::CIA2 { vic, serial_bus: SerialBusBackend {}, rs232: RS232Backend {}, userport: UserportBackend {} }),
+                InterruptControl::NMI(interrupt_backend),
             ),
         };
 
@@ -109,7 +106,7 @@ impl<T: 'static> CIA<T> {
                 Rc::new(RTClock(tod.clone(), Precision::Minutes)),
                 Rc::new(RTClock(tod.clone(), Precision::Hours)),
                 Rc::new(SerialShift(ssr)),
-                Rc::new(IRQStatus(irq)),
+                Rc::new(int_ctrl),
                 Rc::new(ControlTimer(timer_a.clone())),
                 Rc::new(ControlTimer(timer_b.clone())),
             ],

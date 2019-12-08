@@ -16,7 +16,11 @@ pub(super) struct DataDirectionB<T>(pub R2C<DataPortBackend<T>>);
 pub(super) struct Timer(pub R2C<TimerBackend>, pub ByteHalf);
 pub(super) struct RTClock(pub R2C<TimeOfDayBackend>, pub Precision);
 pub(super) struct SerialShift(pub R2C<SerialShiftBackend>);
-pub(super) struct IRQStatus(pub R2C<IRQBackend>);
+pub(super) enum InterruptControl {
+    IRQ(R2C<InterruptBackend>),
+    NMI(R2C<InterruptBackend>),
+}
+
 pub(super) struct ControlTimer(pub R2C<TimerBackend>);
 
 pub(super) enum ByteHalf {
@@ -334,11 +338,32 @@ impl Register for SerialShift {
 /// Bit 7:  Read / did any CIA #1 source cause an interrupt?  (1=yes)
 ///         Write/ set or clear bits of this register (1=bits written with 1 will
 ///         be set, 0=bits written with 1 will be cleared)
-impl Register for IRQStatus {
+impl Register for InterruptControl {
     fn read(&self) -> u8 {
-        return 0; // unimplemented!()
+        use self::InterruptControl::*;
+        match self {
+            IRQ(backend) => {
+                const INTERRUPTED: u8 = 0b10000000;
+
+                let mut be = backend.borrow_mut();
+                let result = be.occured.bits() | if be.interrupted { INTERRUPTED } else { 0 };
+                be.occured.remove(InterruptSources::all());
+                be.interrupted = false;
+
+                result
+            }
+            NMI(_backend) => unimplemented!(),
+        }
     }
-    fn write(&self, _val: u8) {
-        // unimplemented!()
+
+    fn write(&self, val: u8) {
+        use self::InterruptControl::*;
+        match self {
+            IRQ(backend) => {
+                bitflags! {struct WriteMode: u8 { const SET = 0b10000000; }};
+                backend.borrow_mut().enabled.set(InterruptSources::from_bits_truncate(val), WriteMode::from_bits_truncate(val).contains(WriteMode::SET))
+            }
+            NMI(_backend) => unimplemented!(),
+        }
     }
 }
