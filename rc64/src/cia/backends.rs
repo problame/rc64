@@ -340,12 +340,44 @@ pub struct TimerBackend {
     pub(super) value: u16,
     pub(super) running: bool,
     pub(super) underflow_mode: TimerUnderflowMode,
-    pub(super) kind: TimerBackendKind,
+    pub(super) underflow_action: Option<R2C<TimerBackend>>,
+    pub(super) input_mode: TimerInputMode,
 }
 
-pub(super) enum TimerBackendKind {
-    A,
-    B(R2C<TimerBackend>),
+#[derive(Clone, Copy)]
+pub(super) enum TimerInputMode {
+    A(TimerInputModeA),
+    B(TimerInputModeB),
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum TimerInputModeA {
+    MosCycles,
+    UserPortCNTLine,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum TimerInputModeB {
+    MosCycles,
+    UserPortCNTLine,
+    OtherTimer,
+    OtherTimerAndCNT,
+}
+
+impl TimerInputMode {
+    fn count_mos_cycles(&self) -> bool {
+        match self {
+            TimerInputMode::A(TimerInputModeA::MosCycles) | TimerInputMode::B(TimerInputModeB::MosCycles) => true,
+            _ => false,
+        }
+    }
+
+    fn stepped_by_other_timer(&self) -> bool {
+        match self {
+            TimerInputMode::B(TimerInputModeB::OtherTimer) => true,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -362,10 +394,11 @@ impl TimerBackend {
             value: 0,
             running: false,
             underflow_mode: TimerUnderflowMode::OneShot,
-            kind: match other_timer {
-                None => TimerBackendKind::A,
-                Some(timer) => TimerBackendKind::B(timer),
+            input_mode: match &other_timer {
+                None => TimerInputMode::A(TimerInputModeA::MosCycles),
+                Some(_) => TimerInputMode::B(TimerInputModeB::MosCycles),
             },
+            underflow_action: other_timer,
         }
     }
 
@@ -393,17 +426,31 @@ impl TimerBackend {
     /// either the microprocessor clock cycles or external pulses on the CTN line, which is connected to
     /// pin 4 of the User Port.
     pub(super) fn cycle(&mut self) {
-        if self.running {
-            match self.value.checked_sub(1) {
-                Some(value) => self.value = value,
-                None => {
-                    // TODO Trigger IRQ and set IRQStatus
-                    // TODO Output to Port B
-                    self.value = self.latch;
-                    self.running = match self.underflow_mode {
-                        TimerUnderflowMode::OneShot => false,
-                        TimerUnderflowMode::Continuous => true,
-                    }
+        if self.running && self.input_mode.count_mos_cycles() {
+            self.dec()
+        }
+    }
+
+    fn step(&mut self) {
+        if self.running && self.input_mode.stepped_by_other_timer() {
+            self.dec()
+        }
+    }
+
+    fn dec(&mut self) {
+        match self.value.checked_sub(1) {
+            Some(value) => self.value = value,
+            None => {
+                // TODO Trigger IRQ and set IRQStatus
+                // TODO Output to Port B
+                self.value = self.latch;
+                self.running = match self.underflow_mode {
+                    TimerUnderflowMode::OneShot => false,
+                    TimerUnderflowMode::Continuous => true,
+                };
+
+                if let Some(other_timer) = self.underflow_action.as_ref() {
+                    other_timer.borrow_mut().step()
                 }
             }
         }
