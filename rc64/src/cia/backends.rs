@@ -1,3 +1,4 @@
+use crate::interrupt::Interrupt;
 use crate::utils::R2C;
 use crate::vic20::VIC20;
 
@@ -342,6 +343,8 @@ pub struct TimerBackend {
     pub(super) underflow_mode: TimerUnderflowMode,
     pub(super) underflow_action: Option<R2C<TimerBackend>>,
     pub(super) input_mode: TimerInputMode,
+
+    pub(super) interrupt_be: R2C<InterruptBackend>,
 }
 
 #[derive(Clone, Copy)]
@@ -378,6 +381,13 @@ impl TimerInputMode {
             _ => false,
         }
     }
+
+    fn interrupt_source(&self) -> InterruptSources {
+        match self {
+            TimerInputMode::A(_) => InterruptSources::TIMER_A,
+            TimerInputMode::B(_) => InterruptSources::TIMER_B,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -387,7 +397,7 @@ pub(super) enum TimerUnderflowMode {
 }
 
 impl TimerBackend {
-    pub(super) fn new(other_timer: Option<R2C<TimerBackend>>) -> Self {
+    pub(super) fn new(other_timer: Option<R2C<TimerBackend>>, interrupt_be: R2C<InterruptBackend>) -> Self {
         // TODO What are the correct defaults here?
         TimerBackend {
             latch: 0,
@@ -399,6 +409,7 @@ impl TimerBackend {
                 Some(_) => TimerInputMode::B(TimerInputModeB::MosCycles),
             },
             underflow_action: other_timer,
+            interrupt_be,
         }
     }
 
@@ -425,24 +436,29 @@ impl TimerBackend {
     /// Although usually a timer will be used to count the microprocessor cycles, Timer A can count
     /// either the microprocessor clock cycles or external pulses on the CTN line, which is connected to
     /// pin 4 of the User Port.
-    pub(super) fn cycle(&mut self) {
+    pub(super) fn cycle(&mut self) -> Option<Interrupt> {
         if self.running && self.input_mode.count_mos_cycles() {
             self.dec()
+        } else {
+            None
         }
     }
 
-    fn step(&mut self) {
+    fn step(&mut self) -> Option<Interrupt> {
         if self.running && self.input_mode.stepped_by_other_timer() {
             self.dec()
+        } else {
+            None
         }
     }
 
-    fn dec(&mut self) {
+    fn dec(&mut self) -> Option<Interrupt> {
         match self.value.checked_sub(1) {
-            Some(value) => self.value = value,
+            Some(value) => {
+                self.value = value;
+                None
+            }
             None => {
-                // TODO Trigger IRQ and set IRQStatus
-                // TODO Output to Port B
                 self.value = self.latch;
                 self.running = match self.underflow_mode {
                     TimerUnderflowMode::OneShot => false,
@@ -450,8 +466,10 @@ impl TimerBackend {
                 };
 
                 if let Some(other_timer) = self.underflow_action.as_ref() {
-                    other_timer.borrow_mut().step()
+                    other_timer.borrow_mut().step();
                 }
+
+                self.interrupt_be.borrow_mut().generate(self.input_mode.interrupt_source())
             }
         }
     }
@@ -609,21 +627,16 @@ bitflags! {
 }
 
 impl InterruptBackend {
-    pub fn trigger(&mut self, kind: InterruptSources) -> Option<Interrupt> {
+    pub fn generate(&mut self, kind: InterruptSources) -> Option<Interrupt> {
         self.occured.insert(kind);
         if self.enabled.contains(kind) {
             // TODO Should this be set even if IRQs are masked in the CPU?
             self.interrupted = true;
-            Some(Interrupt::IRQ)
+            Some(Interrupt)
         } else {
             None
         }
     }
-}
-
-pub enum Interrupt {
-    IRQ,
-    NMI,
 }
 
 /// Data Port A is used for communication with the Serial Bus.  Bits 5 and

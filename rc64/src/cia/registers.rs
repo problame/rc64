@@ -16,10 +16,7 @@ pub(super) struct DataDirectionB<T>(pub R2C<DataPortBackend<T>>);
 pub(super) struct Timer(pub R2C<TimerBackend>, pub ByteHalf);
 pub(super) struct RTClock(pub R2C<TimeOfDayBackend>, pub Precision);
 pub(super) struct SerialShift(pub R2C<SerialShiftBackend>);
-pub(super) enum InterruptControl {
-    IRQ(R2C<InterruptBackend>),
-    NMI(R2C<InterruptBackend>),
-}
+pub(super) struct InterruptControl(pub R2C<InterruptBackend>);
 
 pub(super) struct ControlTimer(pub R2C<TimerBackend>);
 
@@ -340,30 +337,18 @@ impl Register for SerialShift {
 ///         be set, 0=bits written with 1 will be cleared)
 impl Register for InterruptControl {
     fn read(&self) -> u8 {
-        use self::InterruptControl::*;
-        match self {
-            IRQ(backend) => {
-                const INTERRUPTED: u8 = 0b10000000;
+        const INTERRUPTED: u8 = 0b10000000;
 
-                let mut be = backend.borrow_mut();
-                let result = be.occured.bits() | if be.interrupted { INTERRUPTED } else { 0 };
-                be.occured.remove(InterruptSources::all());
-                be.interrupted = false;
+        let mut be = self.0.borrow_mut();
+        let result = be.occured.bits() | if be.interrupted { INTERRUPTED } else { 0 };
+        be.occured.remove(InterruptSources::all());
+        be.interrupted = false;
 
-                result
-            }
-            NMI(_backend) => unimplemented!(),
-        }
+        result
     }
 
     fn write(&self, val: u8) {
-        use self::InterruptControl::*;
-        match self {
-            IRQ(backend) => {
-                bitflags! {struct WriteMode: u8 { const SET = 0b10000000; }};
-                backend.borrow_mut().enabled.set(InterruptSources::from_bits_truncate(val), WriteMode::from_bits_truncate(val).contains(WriteMode::SET))
-            }
-            NMI(_backend) => unimplemented!(),
-        }
+        bitflags! {struct WriteMode: u8 { const SET = 0b10000000; }};
+        self.0.borrow_mut().enabled.set(InterruptSources::from_bits_truncate(val), WriteMode::from_bits_truncate(val).contains(WriteMode::SET))
     }
 }

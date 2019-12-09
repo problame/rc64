@@ -1,7 +1,7 @@
 mod backends;
 mod registers;
 
-pub use backends::InterruptBackend;
+use crate::interrupt::Interrupt;
 
 use crate::mos6510;
 use crate::utils::R2C;
@@ -66,28 +66,23 @@ pub enum CIAKind<T> {
 
 // TODO Remove this 'static
 impl<T: 'static> CIA<T> {
-    pub fn new(kind: CIAKind<T>, interrupt_backend: R2C<InterruptBackend>) -> Self {
+    pub fn new(kind: CIAKind<T>) -> Self {
         use CIAKind::*;
 
-        let (data_port, int_ctrl) = match kind {
-            Chip1 => (
-                r2c_new!(DataPortBackend::CIA1 {
-                    keyboard: KeyboardBackend,
-                    joystick1: JoystickBackend,
-                    joystick2: JoystickBackend,
-                    lightpen: LigthpenBackend,
-                    paddles: PaddlesBackend,
-                }),
-                InterruptControl::IRQ(interrupt_backend),
-            ),
-            Chip2 { vic } => (
-                r2c_new!(DataPortBackend::CIA2 { vic, serial_bus: SerialBusBackend {}, rs232: RS232Backend {}, userport: UserportBackend {} }),
-                InterruptControl::NMI(interrupt_backend),
-            ),
+        let data_port = match kind {
+            Chip1 => r2c_new!(DataPortBackend::CIA1 {
+                keyboard: KeyboardBackend,
+                joystick1: JoystickBackend,
+                joystick2: JoystickBackend,
+                lightpen: LigthpenBackend,
+                paddles: PaddlesBackend,
+            }),
+            Chip2 { vic } => r2c_new!(DataPortBackend::CIA2 { vic, serial_bus: SerialBusBackend {}, rs232: RS232Backend {}, userport: UserportBackend {} }),
         };
 
-        let timer_a = r2c_new!(TimerBackend::new(None));
-        let timer_b = r2c_new!(TimerBackend::new(Some(timer_a.clone())));
+        let int_be = r2c_new!(InterruptBackend::default());
+        let timer_a = r2c_new!(TimerBackend::new(None, int_be.clone()));
+        let timer_b = r2c_new!(TimerBackend::new(Some(timer_a.clone()), int_be.clone()));
         let tod = r2c_new!(TimeOfDayBackend::default());
         let ssr = r2c_new!(SerialShiftBackend::default());
 
@@ -106,7 +101,7 @@ impl<T: 'static> CIA<T> {
                 Rc::new(RTClock(tod.clone(), Precision::Minutes)),
                 Rc::new(RTClock(tod.clone(), Precision::Hours)),
                 Rc::new(SerialShift(ssr)),
-                Rc::new(int_ctrl),
+                Rc::new(InterruptControl(int_be)),
                 Rc::new(ControlTimer(timer_a.clone())),
                 Rc::new(ControlTimer(timer_b.clone())),
             ],
@@ -118,9 +113,8 @@ impl<T: 'static> CIA<T> {
         }
     }
 
-    pub fn cycle(&self) {
-        self.timer_a.borrow_mut().cycle();
-        self.timer_b.borrow_mut().cycle();
+    pub fn cycle(&self) -> Option<Interrupt> {
+        self.timer_a.borrow_mut().cycle().or(self.timer_b.borrow_mut().cycle())
     }
 }
 
