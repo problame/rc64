@@ -29,6 +29,16 @@ impl mos6510::MemoryArea for UnimplMemoryArea {
     }
 }
 
+struct HeadlessChickenMemoryArea;
+impl mos6510::MemoryArea for HeadlessChickenMemoryArea {
+    fn read(&self, _addr: u16) -> u8 {
+        return 0;
+    }
+    fn write(&mut self, _addr: u16, _d: u8) -> mos6510::WriteResult {
+        mos6510::WriteResult::Ignored
+    }
+}
+
 fn main() {
     let kernal = if std::env::args().len() == 2 {
         let kernal_img = std::fs::read(std::env::args().nth(1).unwrap()).expect("read custom kernal image failed");
@@ -50,17 +60,17 @@ fn main() {
     let areas = enum_map::enum_map! {
         MemoryAreaKind::BasicRom =>  r2c_new!(rom::stock::BASIC_ROM) as R2C<dyn MemoryArea>,
         MemoryAreaKind::KernelRom => kernal.clone(),
-        MemoryAreaKind::IO1 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::IO2 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::CIA2 =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::CIA1 =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::IO1 =>       r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::IO2 =>       r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CIA2 =>      r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CIA1 =>      r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::ColorRam =>  color_ram.clone() as R2C<dyn MemoryArea>,
-        MemoryAreaKind::SID =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::SID =>       r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::VIC =>       vic20.clone(),
         MemoryAreaKind::CharRom =>   r2c_new!(rom::stock::CHAR_ROM) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::Unmapped =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::CartRomLow =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::CartRomHi =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::Unmapped =>      r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CartRomLow =>      r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CartRomHi =>      r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
     };
 
     let mut mpu = mos6510::MOS6510::new(areas, ram.clone());
