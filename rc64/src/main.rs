@@ -43,9 +43,9 @@ fn main() {
     let ram = r2c_new!(RAM::default());
     let color_ram = r2c_new!(ColorRAM::default());
 
-    let screen = Box::new(backend::fb_minifb::Minifb::new());
+    let screen = r2c_new!(backend::fb_minifb::Minifb::new());
 
-    let vic20 = r2c_new!(vic20::VIC20::new(rom::stock::CHAR_ROM, ram.clone(), color_ram.clone(), screen));
+    let vic20 = r2c_new!(vic20::VIC20::new(rom::stock::CHAR_ROM, ram.clone(), color_ram.clone(), screen.clone()));
 
     let cia1 = r2c_new!(CIA::<()>::new(CIAKind::Chip1));
     let cia2 = r2c_new!(CIA::new(CIAKind::Chip2 { vic: vic20.clone() }));
