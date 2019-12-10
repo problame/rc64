@@ -48,11 +48,11 @@ pub trait ScreenBackend {
 
 pub struct VIC20<T> {
     mem: MemoryView<T>,
-    screen: Box<dyn ScreenBackend>,
+    screen: R2C<dyn ScreenBackend>,
 }
 
 impl<T: AsRef<[u8]>> VIC20<T> {
-    pub fn new(char_rom: ROM<T>, ram: R2C<RAM>, color_ram: R2C<ColorRAM>, screen: Box<dyn ScreenBackend>) -> Self {
+    pub fn new(char_rom: ROM<T>, ram: R2C<RAM>, color_ram: R2C<ColorRAM>, screen: R2C<dyn ScreenBackend>) -> Self {
         VIC20 { mem: MemoryView::new(char_rom, ram, color_ram), screen }
     }
 
@@ -71,7 +71,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 let (color, ch) = self.mem.read(U14::try_from(0x400 + (char_row * 40 + char_col)).unwrap()).into();
                 // find ch in char rom
                 let bm = self.mem.read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
-                self.screen.set_char_line(Point(x, y), Color::try_from(color).unwrap(), Color::try_from(0).unwrap(), bm);
+                self.screen.borrow_mut().set_char_line(Point(x, y), Color::try_from(color).unwrap(), Color::try_from(0).unwrap(), bm);
             }
         }
     }
