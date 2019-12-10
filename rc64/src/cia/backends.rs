@@ -2,171 +2,165 @@ use crate::interrupt::Interrupt;
 use crate::utils::R2C;
 use crate::vic20::VIC20;
 
-/// Location Range: 56320-56321 ($DC00-$DC01)
-/// CIA #1 Data Ports A and B
-///
-/// These registers are where the actual communication with outside devices takes place.  Bits of
-/// data written to these registers can be sent to external devices, while bits of data that those
-/// devices send can be read here.
-///
-/// The keyboard is so necessary to the computer's operation that you may have a hard time thinking
-/// of it as a peripheral device.  Nonetheless, it cannot be directly read by the 6510
-/// microprocessor.  Instead, the keys are connected in a matrix of eight rows by eight columns to
-/// CIA #1 Ports A and B.  The layout of this matrix is shown below.
-///
-/// WRITE TO PORT A               READ PORT B (56321, $DC01)
-/// 56320/$DC00
-///          Bit 7   Bit 6   Bit 5   Bit 4   Bit 3   Bit 2   Bit 1   Bit 0
-///
-/// Bit 7    STOP    Q       C=      SPACE   2       CTRL    <-      1
-///
-/// Bit 6    /       ^       =       RSHIFT  HOME    ;       *       LIRA
-///
-/// Bit 5    ,       @       :       .       -       L       P       +
-///
-/// Bit 4    N       O       K       M       0       J       I       9
-///
-/// Bit 3    V       U       H       B       8       G       Y       7
-///
-/// Bit 2    X       T       F       C       6       D       R       5
-///
-/// Bit 1    LSHIFT  E       S       Z       4       A       W       3
-///
-/// Bit 0    CRSR DN F5      F3      F1      F7      CRSR RT RETURN  DELETE
-///
-/// As you can see, there are two keys which do not appear in the matrix.  The SHIFT LOCK key is not
-/// read as a separate key, but rather is a mechanical device which holds the left SHIFT key switch
-/// in a closed position.  The RESTORE key is not read like the other keys either.  It is directly
-/// connected to the NMI interrupt line of the 6510 microprocessor, and causes an NMI interrupt to
-/// occur whenever it is pressed (not just when it is pressed with the STOP key).
-///
-/// In order to read the individual keys in the matrix, you must first set Port A for all outputs
-/// (255, $FF), and Port B for all inputs (0), using the Data Direction Registers.  Note that this
-/// is the default condition.  Next, you must write a 0 in the bit of Data Port A that corresponds
-/// to the column that you wish to read, and a 1 to the bits that correspond to columns you wish to
-/// ignore.  You will then be able to read Data Port B to see which keys in that column are being
-/// pushed.
-///
-/// A 0 in any bit position signifies that the key in the corresponding row of the selected column
-/// is being pressed, while a 1 indicates that the key is not being pressed.  A value of 255 ($FF)
-/// means that no keys in that column are being pressed.
-///
-/// Fortunately for us all, an interrupt routine causes the keyboard to be read, and the results are
-/// made available to the Operating System automatically every 1/60 second.  And even when the
-/// normal interrupt routine cannot be used, you can use the Kernal SCNKEY routine at 65439 ($FF9F)
-/// to read the keyboard.
-///
-/// These same data ports are also used to read the joystick controllers.  Although common sense
-/// might lead you to believe that you could read the joystick that is plugged into the port marked
-/// Controller Port 1 from Data Port A, and the second joystick from Data Port B, there is nothing
-/// common about the Commodore 64.  Controller Port 1 is read from Data Port B, and Controller Port
-/// 2 is read from CIA #1 Data Port A.
-///
-/// Joysticks consist of five switches, one each for up, down, right, and left directions, and
-/// another for the fire button.  The switches are read like the key switches--if the switch is
-/// pressed, the corresponding bit will read 0, and if it is not pressed, the bit will be set to 1.
-/// From BASIC, you can PEEK the ports and use the AND and NOT operators to mask the unused bits and
-/// inverse the logic for easier comprehension.  For example, to read the joystick in Controller
-/// Port 1, you could use the statement:
-///
-/// S1=NOT PEEK(56321)AND15
-///
-/// The meaning of the possible numbers returned are:
-///
-///  0 = none pressed
-///  1 = up
-///  2 = down
-///  4 = left
-///  5 = up left
-///  6 = down left
-///  8 = right
-///  9 = up right
-/// 10 = down right
-///
-/// The same technique can be used for joystick 2, by substituting 56320 as the number to PEEK.  By
-/// the way, the 3 and 7 aren't listed because they represent impossible combinations like up-down.
-///
-/// To read the fire buttons, you can PEEK the appropriate port and use the AND operator to mask all
-/// but bit 4:
-///
-/// T1=(PEEK(56321)AND16)/16
-///
-/// The above will return a 0 if the button is pressed, and a 1 if it is not.  Substitute location
-/// 56320 as the location to PEEK for Trigger Button 2.
-///
-/// Since CIA #1 Data Port B is used for reading the keyboard as well as joystick 1, some confusion
-/// can result.  The routine that checks the keyboard has no way of telling whether a particular bit
-/// was set to 0 by a keypress or one of the joystick switches.  For example, if you plug the
-/// joystick into Controller Port 1 and push the stick to the right, the routine will interpret this
-/// as the 2 key being pressed, because both set the same bit to 0.  Likewise, when you read the
-/// joystick, it will register as being pushed to the right if the 2 key is being pressed.
-///
-/// The problem of mistaking the keyboard for the joystick can be solved by turning off the keyscan
-/// momentarily when reading the stick with a POKE 56333, 127:POKE 56320,255, and restoring it after
-/// the read with a POKE 56333,129.  Sometimes you can use the simpler solution of clearing the
-/// keyboard buffer after reading the joystick, with a POKE 198,0.
-///
-/// The problem of mistaking the joystick for a keypress is much more difficult--there is no real
-/// way to turn off the joystick.  Many commercially available games just use Controller Port 2 to
-/// avoid the conflict.  So, if you can't beat them, sit back and press your joystick to the left in
-/// order to slow down a program listing (the keyscan routine thinks that it is the CTRL key).
-///
-/// As if all of the above were not enough, Port A is also used to control which set of paddles is
-/// read by the SID chip, and to read the paddle fire buttons.  Since there are two paddles per
-/// joystick Controller Port, and only two SID registers for reading paddle positions, there has to
-/// be a method for switching the paddle read from joystick Port 1 to joystick Port 2.
-///
-/// When Bit 7 of Port A is set to 1 and Bit 6 is cleared to 0, the SID registers will read the
-/// paddles on Port 1.  When Bit 7 is set to 0 and Bit 6 is set to 1, the paddles on Port 2 are read
-/// by the SID chip registers.  Note that this also conflicts with the keyscan routine, which is
-/// constantly writing different values to CIA #1 Data Port A in order to select the keyboard column
-/// to read (most of the time, the value for the last column is written to this port, which
-/// coincides with the selection of paddles on joystick Port 1).  Therefore, in order to get an
-/// accurate reading, you must turn off the keyscan IRQ and select which joystick port you want to
-/// read.  See POTX at 54297 ($D419), which is the SID register where the paddles are read, for the
-/// exact technique.
-///
-/// Although the SID chip is used to read the paddle settings, the fire buttons are read at CIA #1
-/// Data Ports A and B.  The fire buttons for the paddles plugged into Controller Port 1 are read at
-/// Data Port B (56321, $DC01), while those for the paddles plugged into Controller Port 2 are read
-/// from Data Port A (56320, $DC00).  The fire buttons are read at Bit 2 and Bit 3 of each port (the
-/// same as the joystick left and joystick right switches), and as usual, the bit will read 0 if the
-/// corresponding button is pushed, and 1 if it is not.
-///
-/// Although only two of the rout paddle values can be read at any one time, you can always read all
-/// four paddle buttons.  See the game paddle input description at 54297 ($D419) for the BASIC
-/// statements used to read these buttons.
-///
-/// Finally, Data Port B can also be used as an output by either Timer A or B.  It is possible to
-/// set a mode in which the timers do not cause an interrupt when they run down (see the
-/// descriptions of Control Registers A and B at 56334-5 ($DC0E-F)).  Instead, they cause the output
-/// on Bit 6 or 7 of Data Port B to change.  Timer A can be set either to pulse the output of Bit 6
-/// for one machine cycle, or to toggle that bit from 1 to 0 or 0 to 1.  Timer B can use Bit 7 of
-/// this register for the same purpose.
-///
-/// Location Range: 56322-56323 ($DC02-$DC03)
-/// CIA #1 Data Direction Registers A and B
-///
-/// These Data Direction Registers control the direction of data flow over Data Ports A and B.  Each
-/// bit controls the direction of the data on the corresponding bit of the port.  If teh bit of the
-/// Direction Register is set to a 1, the corresponding Data Port bit will be used for data output.
-/// If the bit is set to a 0, the corresponding Data Port bit will be used for data input.  For
-/// example, Bit 7 of Data Direction Register A controls Bit 7 of Data Port A, and if that direction
-/// bit is set to 0, Bit 7 of Data Port A will be used for data input.  If the direction bit is set
-/// to 1, however, data Bit 7 on Port A will be used for data output.
-///
-/// The default setting for Data Direction Register A is 255 (all outputs), and for Data Direction
-/// Register B it is 0 (all inputs).  This corresponds to the setting used when reading the keyboard
-/// (the keyboard column number is written to Data Port A, and the row number is then read in Data
-/// Port B).
 pub enum DataPortBackend<T> {
-    CIA1 {
-        keyboard: KeyboardBackend,
-        joystick1: JoystickBackend,
-        joystick2: JoystickBackend,
-        lightpen: LigthpenBackend,
-        paddles: PaddlesBackend,
-    },
+    /// Location Range: 56320-56321 ($DC00-$DC01)
+    /// CIA #1 Data Ports A and B
+    ///
+    /// These registers are where the actual communication with outside devices takes place.  Bits of
+    /// data written to these registers can be sent to external devices, while bits of data that those
+    /// devices send can be read here.
+    ///
+    /// The keyboard is so necessary to the computer's operation that you may have a hard time thinking
+    /// of it as a peripheral device.  Nonetheless, it cannot be directly read by the 6510
+    /// microprocessor.  Instead, the keys are connected in a matrix of eight rows by eight columns to
+    /// CIA #1 Ports A and B.  The layout of this matrix is shown below.
+    ///
+    /// WRITE TO PORT A               READ PORT B (56321, $DC01)
+    /// 56320/$DC00
+    ///          Bit 7   Bit 6   Bit 5   Bit 4   Bit 3   Bit 2   Bit 1   Bit 0
+    ///
+    /// Bit 7    STOP    Q       C=      SPACE   2       CTRL    <-      1
+    ///
+    /// Bit 6    /       ^       =       RSHIFT  HOME    ;       *       LIRA
+    ///
+    /// Bit 5    ,       @       :       .       -       L       P       +
+    ///
+    /// Bit 4    N       O       K       M       0       J       I       9
+    ///
+    /// Bit 3    V       U       H       B       8       G       Y       7
+    ///
+    /// Bit 2    X       T       F       C       6       D       R       5
+    ///
+    /// Bit 1    LSHIFT  E       S       Z       4       A       W       3
+    ///
+    /// Bit 0    CRSR DN F5      F3      F1      F7      CRSR RT RETURN  DELETE
+    ///
+    /// As you can see, there are two keys which do not appear in the matrix.  The SHIFT LOCK key is not
+    /// read as a separate key, but rather is a mechanical device which holds the left SHIFT key switch
+    /// in a closed position.  The RESTORE key is not read like the other keys either.  It is directly
+    /// connected to the NMI interrupt line of the 6510 microprocessor, and causes an NMI interrupt to
+    /// occur whenever it is pressed (not just when it is pressed with the STOP key).
+    ///
+    /// In order to read the individual keys in the matrix, you must first set Port A for all outputs
+    /// (255, $FF), and Port B for all inputs (0), using the Data Direction Registers.  Note that this
+    /// is the default condition.  Next, you must write a 0 in the bit of Data Port A that corresponds
+    /// to the column that you wish to read, and a 1 to the bits that correspond to columns you wish to
+    /// ignore.  You will then be able to read Data Port B to see which keys in that column are being
+    /// pushed.
+    ///
+    /// A 0 in any bit position signifies that the key in the corresponding row of the selected column
+    /// is being pressed, while a 1 indicates that the key is not being pressed.  A value of 255 ($FF)
+    /// means that no keys in that column are being pressed.
+    ///
+    /// Fortunately for us all, an interrupt routine causes the keyboard to be read, and the results are
+    /// made available to the Operating System automatically every 1/60 second.  And even when the
+    /// normal interrupt routine cannot be used, you can use the Kernal SCNKEY routine at 65439 ($FF9F)
+    /// to read the keyboard.
+    ///
+    /// These same data ports are also used to read the joystick controllers.  Although common sense
+    /// might lead you to believe that you could read the joystick that is plugged into the port marked
+    /// Controller Port 1 from Data Port A, and the second joystick from Data Port B, there is nothing
+    /// common about the Commodore 64.  Controller Port 1 is read from Data Port B, and Controller Port
+    /// 2 is read from CIA #1 Data Port A.
+    ///
+    /// Joysticks consist of five switches, one each for up, down, right, and left directions, and
+    /// another for the fire button.  The switches are read like the key switches--if the switch is
+    /// pressed, the corresponding bit will read 0, and if it is not pressed, the bit will be set to 1.
+    /// From BASIC, you can PEEK the ports and use the AND and NOT operators to mask the unused bits and
+    /// inverse the logic for easier comprehension.  For example, to read the joystick in Controller
+    /// Port 1, you could use the statement:
+    ///
+    /// S1=NOT PEEK(56321)AND15
+    ///
+    /// The meaning of the possible numbers returned are:
+    ///
+    ///  0 = none pressed
+    ///  1 = up
+    ///  2 = down
+    ///  4 = left
+    ///  5 = up left
+    ///  6 = down left
+    ///  8 = right
+    ///  9 = up right
+    /// 10 = down right
+    ///
+    /// The same technique can be used for joystick 2, by substituting 56320 as the number to PEEK.  By
+    /// the way, the 3 and 7 aren't listed because they represent impossible combinations like up-down.
+    ///
+    /// To read the fire buttons, you can PEEK the appropriate port and use the AND operator to mask all
+    /// but bit 4:
+    ///
+    /// T1=(PEEK(56321)AND16)/16
+    ///
+    /// The above will return a 0 if the button is pressed, and a 1 if it is not.  Substitute location
+    /// 56320 as the location to PEEK for Trigger Button 2.
+    ///
+    /// Since CIA #1 Data Port B is used for reading the keyboard as well as joystick 1, some confusion
+    /// can result.  The routine that checks the keyboard has no way of telling whether a particular bit
+    /// was set to 0 by a keypress or one of the joystick switches.  For example, if you plug the
+    /// joystick into Controller Port 1 and push the stick to the right, the routine will interpret this
+    /// as the 2 key being pressed, because both set the same bit to 0.  Likewise, when you read the
+    /// joystick, it will register as being pushed to the right if the 2 key is being pressed.
+    ///
+    /// The problem of mistaking the keyboard for the joystick can be solved by turning off the keyscan
+    /// momentarily when reading the stick with a POKE 56333, 127:POKE 56320,255, and restoring it after
+    /// the read with a POKE 56333,129.  Sometimes you can use the simpler solution of clearing the
+    /// keyboard buffer after reading the joystick, with a POKE 198,0.
+    ///
+    /// The problem of mistaking the joystick for a keypress is much more difficult--there is no real
+    /// way to turn off the joystick.  Many commercially available games just use Controller Port 2 to
+    /// avoid the conflict.  So, if you can't beat them, sit back and press your joystick to the left in
+    /// order to slow down a program listing (the keyscan routine thinks that it is the CTRL key).
+    ///
+    /// As if all of the above were not enough, Port A is also used to control which set of paddles is
+    /// read by the SID chip, and to read the paddle fire buttons.  Since there are two paddles per
+    /// joystick Controller Port, and only two SID registers for reading paddle positions, there has to
+    /// be a method for switching the paddle read from joystick Port 1 to joystick Port 2.
+    ///
+    /// When Bit 7 of Port A is set to 1 and Bit 6 is cleared to 0, the SID registers will read the
+    /// paddles on Port 1.  When Bit 7 is set to 0 and Bit 6 is set to 1, the paddles on Port 2 are read
+    /// by the SID chip registers.  Note that this also conflicts with the keyscan routine, which is
+    /// constantly writing different values to CIA #1 Data Port A in order to select the keyboard column
+    /// to read (most of the time, the value for the last column is written to this port, which
+    /// coincides with the selection of paddles on joystick Port 1).  Therefore, in order to get an
+    /// accurate reading, you must turn off the keyscan IRQ and select which joystick port you want to
+    /// read.  See POTX at 54297 ($D419), which is the SID register where the paddles are read, for the
+    /// exact technique.
+    ///
+    /// Although the SID chip is used to read the paddle settings, the fire buttons are read at CIA #1
+    /// Data Ports A and B.  The fire buttons for the paddles plugged into Controller Port 1 are read at
+    /// Data Port B (56321, $DC01), while those for the paddles plugged into Controller Port 2 are read
+    /// from Data Port A (56320, $DC00).  The fire buttons are read at Bit 2 and Bit 3 of each port (the
+    /// same as the joystick left and joystick right switches), and as usual, the bit will read 0 if the
+    /// corresponding button is pushed, and 1 if it is not.
+    ///
+    /// Although only two of the rout paddle values can be read at any one time, you can always read all
+    /// four paddle buttons.  See the game paddle input description at 54297 ($D419) for the BASIC
+    /// statements used to read these buttons.
+    ///
+    /// Finally, Data Port B can also be used as an output by either Timer A or B.  It is possible to
+    /// set a mode in which the timers do not cause an interrupt when they run down (see the
+    /// descriptions of Control Registers A and B at 56334-5 ($DC0E-F)).  Instead, they cause the output
+    /// on Bit 6 or 7 of Data Port B to change.  Timer A can be set either to pulse the output of Bit 6
+    /// for one machine cycle, or to toggle that bit from 1 to 0 or 0 to 1.  Timer B can use Bit 7 of
+    /// this register for the same purpose.
+    ///
+    /// Location Range: 56322-56323 ($DC02-$DC03)
+    /// CIA #1 Data Direction Registers A and B
+    ///
+    /// These Data Direction Registers control the direction of data flow over Data Ports A and B.  Each
+    /// bit controls the direction of the data on the corresponding bit of the port.  If teh bit of the
+    /// Direction Register is set to a 1, the corresponding Data Port bit will be used for data output.
+    /// If the bit is set to a 0, the corresponding Data Port bit will be used for data input.  For
+    /// example, Bit 7 of Data Direction Register A controls Bit 7 of Data Port A, and if that direction
+    /// bit is set to 0, Bit 7 of Data Port A will be used for data input.  If the direction bit is set
+    /// to 1, however, data Bit 7 on Port A will be used for data output.
+    ///
+    /// The default setting for Data Direction Register A is 255 (all outputs), and for Data Direction
+    /// Register B it is 0 (all inputs).  This corresponds to the setting used when reading the keyboard
+    /// (the keyboard column number is written to Data Port A, and the row number is then read in Data
+    /// Port B).
+    CIA1 { keyboard: KeyboardBackend, joystick1: JoystickBackend, joystick2: JoystickBackend, lightpen: LigthpenBackend, paddles: PaddlesBackend },
 
     /// Location Range: 56576-56577 ($DD00-$DD01)
     /// CIA #2 Data Ports A and B
@@ -294,12 +288,7 @@ pub enum DataPortBackend<T> {
     ///
     /// See also the sample program showing how to configure your 64 like a
     /// PET at location 43 ($2B).
-    CIA2 {
-        vic: R2C<VIC20<T>>,
-        serial_bus: SerialBusBackend,
-        rs232: RS232Backend,
-        userport: UserportBackend,
-    },
+    CIA2 { vic: R2C<VIC20<T>>, serial_bus: SerialBusBackend, rs232: RS232Backend, userport: UserportBackend },
 }
 
 pub struct KeyboardBackend;
