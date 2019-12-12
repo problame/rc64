@@ -637,14 +637,13 @@ impl MOS6510 {
             Instr(JMP, Abs(a)) => *args.next_pc = Some(a),
             // JSR 	Jump to a subroutine
             Instr(JSR, Abs(a)) => {
-                dbg!(args.reg.pc);
                 args.reg.sp -= 2; // TODO stack overflow instrumentation
-                args.mem.write_u16(args.reg.sp_abs(), dbg!(args.next_pc.unwrap() - 1));
+                args.mem.write_u16(args.reg.sp_abs(), args.next_pc.unwrap() - 1);
                 *args.next_pc = Some(a);
             }
             // RTS 	Return from subroutine
             Instr(RTS, Imp) => {
-                *args.next_pc = dbg!(Some(args.mem.read_u16(args.reg.sp_abs()).overflowing_add(1).0));
+                *args.next_pc = Some(args.mem.read_u16(args.reg.sp_abs()).overflowing_add(1).0);
                 args.reg.sp += 2;
             }
 
