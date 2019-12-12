@@ -5,6 +5,7 @@ use crate::ram::RAM;
 use crate::utils::R2C;
 pub use mem::*;
 use std::cell::RefCell;
+use std::iter::FromIterator;
 use std::rc::Rc;
 
 use rc64_macros::gen_instr_match;
@@ -23,6 +24,9 @@ impl MOS6510 {
     }
     pub fn state(&self) -> &State {
         &self.state
+    }
+    pub fn mem(&self) -> &MemoryView {
+        &self.mem
     }
 }
 
@@ -81,6 +85,7 @@ impl std::fmt::Display for Regs {
 }
 
 const STACK_BOTTOM: u16 = 0x0100;
+const STACK_TOP: u16 = STACK_BOTTOM + 0xff;
 const RESET_VEC: u16 = 0xfffc;
 
 impl Default for Regs {
@@ -201,12 +206,14 @@ use std::collections::HashSet;
 
 pub struct Debugger {
     pc_bps: HashSet<u16>,
+    ea_bps: HashSet<u16>,
     break_after_next_decode: bool,
+    instr_logging_enabled: bool,
 }
 
 impl Default for Debugger {
     fn default() -> Self {
-        Debugger { pc_bps: HashSet::default(), break_after_next_decode: false }
+        Debugger { pc_bps: HashSet::default(), ea_bps: HashSet::default(), break_after_next_decode: false, instr_logging_enabled: false }
     }
 }
 
@@ -217,24 +224,47 @@ pub enum DebuggerPostDecodePreApplyCbAction {
 }
 
 impl Debugger {
+    pub fn set_instr_logging_enabled(&mut self, enabled: bool) {
+        self.instr_logging_enabled = enabled;
+    }
     pub fn break_after_next_decode(&mut self) {
         self.break_after_next_decode = true;
     }
-    pub fn add_breakpoint(&mut self, pc: u16) {
+    pub fn add_pc_breakpoint(&mut self, pc: u16) {
         self.pc_bps.insert(pc);
     }
-    pub fn del_breakpoint(&mut self, pc: u16) {
+    pub fn del_pc_breakpoint(&mut self, pc: u16) {
         self.pc_bps.remove(&pc);
     }
-    pub fn breakpoints(&self) -> Vec<u16> {
+
+    pub fn add_ea_breakpoint(&mut self, ea: u16) {
+        self.ea_bps.insert(ea);
+    }
+    pub fn del_ea_breakpoint(&mut self, ea: u16) {
+        self.ea_bps.remove(&ea);
+    }
+
+    pub fn pc_breakpoints(&self) -> Vec<u16> {
         self.pc_bps.iter().cloned().collect()
     }
+
+    pub fn ea_breakpoints(&self) -> Vec<u16> {
+        self.ea_bps.iter().cloned().collect()
+    }
     fn post_decode_pre_apply_cb(&mut self, mos: &MOS6510) -> DebuggerPostDecodePreApplyCbAction {
-        if self.pc_bps.contains(&mos.reg.pc) || self.break_after_next_decode {
+        if self.instr_logging_enabled {
+            println!("INSTRLOG: {} REG: {}", mos.state(), mos.reg()) // FIXME to DebuggerUI
+        }
+        if self.break_after_next_decode || self.pc_bps.contains(&mos.reg.pc) {
             self.break_after_next_decode = false;
             DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt
         } else {
             DebuggerPostDecodePreApplyCbAction::DoCycle
+        }
+    }
+    fn ea_cb(&mut self, ea: u16, mos: &MOS6510) {
+        if self.ea_bps.contains(&ea) {
+            self.break_after_next_decode = true; // FIXME hacky
         }
     }
 }
@@ -272,7 +302,7 @@ impl MOS6510 {
         }
 
         let (next_instr, len) = match instr::decode_instr(&instrbuf[..]) {
-            Err(e) => panic!("instruction decode error: {:?}", e),
+            Err(e) => panic!("instruction decode error: {:?}\nregs: {}\nstack:\n\t{}", e, self.reg(), self.dump_stack_lines(true).join("\n\t")),
             Ok((instr, len)) => (instr, len),
         };
         self.state = State::DecodedInstr(next_instr);
@@ -300,6 +330,15 @@ impl MOS6510 {
 
     pub fn debugger_refmut(&self) -> std::cell::RefMut<'_, Debugger> {
         self.debugger.borrow_mut()
+    }
+
+    pub fn dump_stack_lines(&self, from_sp_upward: bool) -> Vec<String> {
+        Vec::from_iter(self.copy_stack(from_sp_upward).into_iter().map(|(addr, val)| format!("0x{:04x} = 0x{:02x}", addr, val)))
+    }
+
+    pub fn copy_stack(&self, from_sp_upward: bool) -> Vec<(u16, u8)> {
+        let lower = if from_sp_upward { self.reg.sp_abs() } else { STACK_BOTTOM };
+        Vec::from_iter((lower..=STACK_TOP).rev().map(|addr| (addr, self.mem.read(addr))))
     }
 
     #[inline]
@@ -390,6 +429,10 @@ impl MOS6510 {
                 }
             }
         };
+
+        if let Some(ea) = effective_addr {
+            self.debugger.borrow_mut().ea_cb(ea.effective, &self);
+        }
 
         let effective_addr_load = effective_addr.map(|a| self.mem.read(a.effective));
 

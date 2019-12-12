@@ -77,7 +77,7 @@ fn main() {
     };
 
     let debugger = r2c_new!(mos6510::Debugger::default());
-    debugger.borrow_mut().add_breakpoint(0);
+    debugger.borrow_mut().add_pc_breakpoint(0);
     let debugger_cli = r2c_new!(debugger_cli::DebuggerCli::default());
 
     let sigint_pending = Arc::new(std::sync::atomic::AtomicBool::default());
