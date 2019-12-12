@@ -571,7 +571,7 @@ impl MOS6510 {
             // DEX 	Decrement the X register 	N,Z
             Instr(DEX, Imp) => args.reg.ldx(args.reg.x.overflowing_sub(1).0),
             // DEY 	Decrement the Y register 	N,Z
-            Instr(DEY, Imp) => args.reg.ldy(args.reg.x.overflowing_sub(1).0),
+            Instr(DEY, Imp) => args.reg.ldy(args.reg.y.overflowing_sub(1).0),
 
             /***************** Shifts ******************/
             // Shift instructions cause the bits within either a memory location or the accumulator to be
