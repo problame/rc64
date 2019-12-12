@@ -14,10 +14,13 @@ mod vic20;
 mod backend {
     pub(super) mod fb_minifb;
 }
+mod debugger_cli;
 
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::utils::R2C;
+
+use std::sync::Arc;
 
 struct UnimplMemoryArea;
 impl mos6510::MemoryArea for UnimplMemoryArea {
@@ -73,7 +76,14 @@ fn main() {
         MemoryAreaKind::CartRomHi =>      r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
     };
 
-    let mut mpu = mos6510::MOS6510::new(areas, ram.clone());
+    let debugger = r2c_new!(mos6510::Debugger::default());
+    debugger.borrow_mut().add_breakpoint(0);
+    let debugger_cli = r2c_new!(debugger_cli::DebuggerCli::default());
+
+    let sigint_pending = Arc::new(std::sync::atomic::AtomicBool::default());
+    signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&sigint_pending)).expect("cannot register SIGINT handler");
+
+    let mut mpu = mos6510::MOS6510::new(areas, ram.clone(), debugger.clone(), debugger_cli as R2C<dyn DebuggerUI>);
 
     use spin_sleep::LoopHelper;
 
@@ -90,6 +100,12 @@ fn main() {
 
         if is_vic_cycle {
             vic20.borrow_mut().cycle();
+        }
+
+        if sigint_pending.load(std::sync::atomic::Ordering::SeqCst) {
+            eprintln!("SIGINT CAUGHT");
+            sigint_pending.store(false, std::sync::atomic::Ordering::SeqCst);
+            debugger.borrow_mut().break_after_next_decode();
         }
         mpu.cycle();
 

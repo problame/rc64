@@ -2,6 +2,7 @@ mod instr;
 mod mem;
 
 use crate::ram::RAM;
+use crate::utils::R2C;
 pub use mem::*;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -12,6 +13,17 @@ pub struct MOS6510 {
     mem: MemoryView,
     reg: Regs,
     state: State,
+    debugger: R2C<Debugger>,
+    debugger_ui: R2C<dyn DebuggerUI>,
+}
+
+impl MOS6510 {
+    pub fn reg(&self) -> &Regs {
+        &self.reg
+    }
+    pub fn state(&self) -> &State {
+        &self.state
+    }
 }
 
 // https://www.c64-wiki.com/wiki/Processor_Status_Register
@@ -23,19 +35,49 @@ bitflags! {
         const IRQD = 0b00_00_01_00;
         const DEC = 0b00_00_10_00;
         const BRK = 0b00_01_00_00;
-        // unused bit 5
+        const UNUSED = 0b00_10_00_00;
         const OVFL = 0b01_00_00_00;
         const NEG = 0b10_00_00_00;
     }
 }
 
-struct Regs {
+use std::fmt::{self, Display, Formatter};
+
+impl Display for Flags {
+    fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+        macro_rules! flag {
+            ($flag:expr, $ch:literal) => {
+                let ch = if self.contains($flag) { $ch.to_uppercase().to_string() } else { $ch.to_lowercase().to_string() };
+                write!(formatter, "{}", ch)?;
+            };
+        }
+        flag!(Flags::CARRY, 'C');
+        flag!(Flags::ZERO, 'Z');
+        flag!(Flags::IRQD, 'I');
+        flag!(Flags::DEC, 'D');
+        flag!(Flags::BRK, 'B');
+        flag!(Flags::UNUSED, 'U');
+        flag!(Flags::OVFL, 'O');
+        flag!(Flags::NEG, 'N');
+        fmt::Result::Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct Regs {
     pc: u16,
     sp: u8,
     a: u8,
     x: u8,
     y: u8,
     p: Flags,
+}
+
+impl std::fmt::Display for Regs {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let Regs { pc, sp, a, x, y, p } = &self;
+        write!(formatter, "PC:{:04x} SP:{:02x} A:{:02x} X:{:02x} Y:{:02x} P:{}", pc, sp, a, x, y, p)
+    }
 }
 
 const STACK_BOTTOM: u16 = 0x0100;
@@ -136,28 +178,84 @@ impl Regs {
 
 use instr::*;
 
-#[derive(PartialEq, Eq, Debug, Display, Clone, Copy)]
-enum State {
+#[derive(PartialEq, Eq, Debug, Clone, Copy)]
+pub enum State {
     Reset,
     BeginInstr,
+    DecodedInstr(Instr),
     ExecInstr { instr: Instr, remaining_cycles: usize },
 }
 
+impl Display for State {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            State::Reset => write!(f, "reset"),
+            State::BeginInstr => write!(f, "pre_decode"),
+            State::DecodedInstr(i) => write!(f, "decoded {}", i),
+            State::ExecInstr { instr, remaining_cycles } => write!(f, "exec[{} cycles left] {}", remaining_cycles, instr),
+        }
+    }
+}
+
+use std::collections::HashSet;
+
+pub struct Debugger {
+    pc_bps: HashSet<u16>,
+    break_after_next_decode: bool,
+}
+
+impl Default for Debugger {
+    fn default() -> Self {
+        Debugger { pc_bps: HashSet::default(), break_after_next_decode: false }
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Debug)]
+pub enum DebuggerPostDecodePreApplyCbAction {
+    DoCycle,
+    BreakToDebugPrompt,
+}
+
+impl Debugger {
+    pub fn break_after_next_decode(&mut self) {
+        self.break_after_next_decode = true;
+    }
+    pub fn add_breakpoint(&mut self, pc: u16) {
+        self.pc_bps.insert(pc);
+    }
+    pub fn del_breakpoint(&mut self, pc: u16) {
+        self.pc_bps.remove(&pc);
+    }
+    pub fn breakpoints(&self) -> Vec<u16> {
+        self.pc_bps.iter().cloned().collect()
+    }
+    fn post_decode_pre_apply_cb(&mut self, mos: &MOS6510) -> DebuggerPostDecodePreApplyCbAction {
+        if self.pc_bps.contains(&mos.reg.pc) || self.break_after_next_decode {
+            self.break_after_next_decode = false;
+            DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt
+        } else {
+            DebuggerPostDecodePreApplyCbAction::DoCycle
+        }
+    }
+}
+
+pub trait DebuggerUI {
+    fn handle_post_decode_pre_apply_action(&mut self, action: DebuggerPostDecodePreApplyCbAction, mos: &MOS6510);
+}
+
 impl MOS6510 {
-    pub fn new(areas: Areas, ram: Rc<RefCell<RAM>>) -> Self {
+    pub fn new(areas: Areas, ram: Rc<RefCell<RAM>>, debugger: R2C<Debugger>, debugger_ui: R2C<dyn DebuggerUI>) -> Self {
         let mem = MemoryView::new(areas, ram);
         let reg = Regs::default();
-        MOS6510 { mem, reg, state: State::Reset }
+        MOS6510 { mem, reg, state: State::Reset, debugger, debugger_ui }
     }
 
     pub fn cycle(&mut self) {
-        println!("cycle {:?}", self.state);
         let mut instrbuf = [0 as u8; 3];
         match self.state {
             State::ExecInstr { ref mut remaining_cycles, .. } => {
                 *remaining_cycles = remaining_cycles.saturating_sub(1);
                 if *remaining_cycles == 0 {
-                    println!("instruction complete");
                     self.state = State::BeginInstr;
                 }
                 return;
@@ -170,22 +268,38 @@ impl MOS6510 {
             State::BeginInstr => {
                 self.mem.read_one_to_three(self.reg.pc, &mut instrbuf[..]);
             }
+            State::DecodedInstr(_) => panic!("unreachable: DecodedInstr is intermediate intra-cycle state between BeginInstr and ExecInstr"),
         }
 
-        match instr::decode_instr(&instrbuf[..]) {
-            Ok((instr, len)) => {
-                self.apply_instr(instr, self.reg.pc.checked_add(len as u16));
-                match self.state {
-                    State::ExecInstr { ref mut remaining_cycles, .. } => {
-                        assert!(*remaining_cycles >= 2, "remaining_cycles = {} (minimum cycle count is 2)", remaining_cycles);
-                        // we already did one cycle in apply_instr
-                        *remaining_cycles -= 1;
-                    }
-                    s => panic!("apply_instr set invalid state {:?}", s),
-                }
-            }
+        let (next_instr, len) = match instr::decode_instr(&instrbuf[..]) {
             Err(e) => panic!("instruction decode error: {:?}", e),
+            Ok((instr, len)) => (instr, len),
+        };
+        self.state = State::DecodedInstr(next_instr);
+
+        // debugger callback
+        let action = self.debugger.borrow_mut().post_decode_pre_apply_cb(&self);
+        debug_assert!(self.debugger.try_borrow().is_ok());
+        match action {
+            DebuggerPostDecodePreApplyCbAction::DoCycle => (), // continue
+            action => {
+                self.debugger_ui.borrow_mut().handle_post_decode_pre_apply_action(action, &self);
+            }
+        };
+
+        self.apply_instr(next_instr, self.reg.pc.checked_add(len as u16));
+        match self.state {
+            State::ExecInstr { ref mut remaining_cycles, .. } => {
+                assert!(*remaining_cycles >= 2, "remaining_cycles = {} (minimum cycle count is 2)", remaining_cycles);
+                // we already did one cycle in apply_instr
+                *remaining_cycles -= 1;
+            }
+            s => panic!("apply_instr set invalid state {:?}", s),
         }
+    }
+
+    pub fn debugger_refmut(&self) -> std::cell::RefMut<'_, Debugger> {
+        self.debugger.borrow_mut()
     }
 
     #[inline]
@@ -215,7 +329,6 @@ impl MOS6510 {
     }
 
     fn apply_instr(&mut self, instr: Instr, mut next_pc: Option<u16>) {
-        println!("apply instr pc={:x} {}", self.reg.pc, instr);
         use instr::Addr::*;
         use instr::Op::*;
         macro_rules! ea {
@@ -281,7 +394,7 @@ impl MOS6510 {
         let effective_addr_load = effective_addr.map(|a| self.mem.read(a.effective));
 
         debug_assert_eq!(self.state, State::BeginInstr);
-        self.state = State::ExecInstr { remaining_cycles: instr.cycles(effective_addr), instr: instr.clone() };
+        self.state = State::ExecInstr { remaining_cycles: instr.cycles(effective_addr), instr };
 
         struct InstrMatchArgs<'a> {
             instr: Instr,
