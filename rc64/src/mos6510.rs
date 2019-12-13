@@ -135,26 +135,42 @@ impl Regs {
         self.set_nz_flags(v);
     }
 
+    // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
     #[inline]
     fn add_to_a_with_carry_and_set_carry(&mut self, v: u8) {
-        // TODO correct?
-        let (v, ovfl1) = v.overflowing_add(self.p.contains(Flags::CARRY) as u8);
-        let (res, ovfl2) = self.a.overflowing_add(v);
-        let ovfl = ovfl1 || ovfl2;
-        self.lda(res);
-        self.p.set(Flags::OVFL, ovfl); // TODO correct?
-        self.p.set(Flags::CARRY, ovfl); // TODO correct?
+        let pre_carry_u8: u8 = self.p.contains(Flags::CARRY) as u8;
+        let (carry, sign, overflow) = {
+            let sixth_lsbits_add = (self.a & 0b0111_1111) + (v & 0b0111_1111) + (pre_carry_u8);
+            let c6 = (sixth_lsbits_add & 0b1000_0000) != 0;
+            let a7 = self.a & 0b1000_0000 != 0;
+            let v7 = v & 0b1000_0000 != 0;
+            match (a7 as u8, v7 as u8, c6 as u8) {
+                (0, 0, 0) => (0, 0, 0), // No unsigned carry or signed overflow	0x50+0x10=0x60	80+16=96	80+16=96
+                (0, 0, 1) => (0, 1, 1), // No unsigned carry but signed overflow	0x50+0x50=0xa0	80+80=160	80+80=-96
+                (0, 1, 0) => (0, 1, 0), // No unsigned carry or signed overflow	0x50+0x90=0xe0	80+144=224	80+-112=-32
+                (0, 1, 1) => (1, 0, 0), // Unsigned carry, but no signed overflow	0x50+0xd0=0x120	80+208=288	80+-48=32
+                (1, 0, 0) => (0, 1, 0), // No unsigned carry or signed overflow	0xd0+0x10=0xe0	208+16=224	-48+16=-32
+                (1, 0, 1) => (1, 0, 0), // Unsigned carry but no signed overflow	0xd0+0x50=0x120	208+80=288	-48+80=32
+                (1, 1, 0) => (1, 0, 1), // Unsigned carry and signed overflow	0xd0+0x90=0x160	208+144=352	-48+-112=96
+                (1, 1, 1) => (1, 1, 0), // Unsigned carry, but no signed overflow	0xd0+0xd0=0x1a0	208+208=416	-48+-48=-96
+                (_, _, _) => unreachable!(),
+            }
+        };
+        let res_u16: u16 = (self.a as u16) + (pre_carry_u8 as u16) + (v as u16);
+        let res = (res_u16 & 0xff) as u8;
+        self.a = res;
+        self.p.set(Flags::ZERO, res == 0);
+        self.p.set(Flags::OVFL, overflow != 0);
+        assert_eq!(res_u16 > 0xff, carry != 0);
+        self.p.set(Flags::CARRY, carry != 0);
+        self.p.set(Flags::NEG, sign != 0);
     }
 
+    // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
     #[inline]
     fn sub_from_a_with_carry_and_set_carry(&mut self, v: u8) {
-        // TODO correct?
-        let (i, ovfl1) = self.a.overflowing_sub(self.p.contains(Flags::CARRY) as u8);
-        let (res, ovfl2) = i.overflowing_sub(v);
-        let ovfl = ovfl1 || ovfl2;
-        self.lda(res);
-        self.p.set(Flags::OVFL, ovfl); // TODO correct?
-        self.p.set(Flags::CARRY, ovfl); // TODO correct?
+        unimplemented!();
+        self.add_to_a_with_carry_and_set_carry(!v); // TODO doesn't pass test case
     }
 
     #[inline]
@@ -772,5 +788,61 @@ mod tests {
         let x: u8 = 255;
         let xi = x as i8;
         assert_eq!(xi, -1);
+    }
+
+    #[test]
+    fn bool_to_u8() {
+        assert_eq!(1 as u8, true as u8);
+        assert_eq!(0 as u8, false as u8);
+    }
+
+    mod alu {
+        use super::super::*;
+
+        #[derive(Debug)]
+        struct Case {
+            pre_a: u8,
+            pre_flags: Flags,
+            v: u8,
+            post_a: u8,
+            post_flags: Flags,
+        }
+
+        #[test]
+        fn adc() {
+            // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
+            let tests = [
+                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0x50, post_a: 0xa0, post_flags: Flags::OVFL | Flags::NEG },
+                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0xd0, post_a: 0x20, post_flags: Flags::CARRY },
+                Case { pre_a: 0xd0, pre_flags: Flags::empty(), v: 0x90, post_a: 0x60, post_flags: Flags::CARRY | Flags::OVFL },
+            ];
+            for case in &tests {
+                println!("running:\n{:#?}", case);
+                let mut reg = Regs::default();
+                reg.p = case.pre_flags;
+                reg.a = case.pre_a;
+                reg.add_to_a_with_carry_and_set_carry(case.v);
+                assert_eq!(reg.a, case.post_a);
+                assert_eq!(reg.p, case.post_flags, "\nis:     {}\nshould: {}", reg.p, case.post_flags)
+            }
+        }
+
+        #[test]
+        fn sdc() {
+            // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
+            let tests = [
+                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0xf0, post_a: 0x60, post_flags: Flags::empty() },
+                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0xb0, post_a: 0xa0, post_flags: Flags::OVFL },
+            ];
+            for case in &tests {
+                println!("running:\n{:#?}", case);
+                let mut reg = Regs::default();
+                reg.p = case.pre_flags;
+                reg.a = case.pre_a;
+                reg.sub_from_a_with_carry_and_set_carry(case.v);
+                assert_eq!(reg.a, case.post_a);
+                assert_eq!(reg.p, case.post_flags, "\nis:     {}\nshould: {}", reg.p, case.post_flags)
+            }
+        }
     }
 }
