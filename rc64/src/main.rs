@@ -16,11 +16,14 @@ mod vic20;
 mod backend {
     pub(super) mod fb_minifb;
 }
+mod debugger_cli;
 
 use crate::cia::{CIAKind, CIA};
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::utils::R2C;
+
+use std::sync::Arc;
 
 struct UnimplMemoryArea;
 impl mos6510::MemoryArea for UnimplMemoryArea {
@@ -29,6 +32,16 @@ impl mos6510::MemoryArea for UnimplMemoryArea {
     }
     fn write(&mut self, _addr: u16, _d: u8) -> mos6510::WriteResult {
         unimplemented!()
+    }
+}
+
+struct HeadlessChickenMemoryArea;
+impl mos6510::MemoryArea for HeadlessChickenMemoryArea {
+    fn read(&self, _addr: u16) -> u8 {
+        return 0;
+    }
+    fn write(&mut self, _addr: u16, _d: u8) -> mos6510::WriteResult {
+        mos6510::WriteResult::Ignored
     }
 }
 
@@ -56,20 +69,27 @@ fn main() {
     let areas = enum_map::enum_map! {
         MemoryAreaKind::BasicRom =>  r2c_new!(rom::stock::BASIC_ROM) as R2C<dyn MemoryArea>,
         MemoryAreaKind::KernelRom => kernal.clone(),
-        MemoryAreaKind::IO1 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::IO2 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::IO1 =>       r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::IO2 =>       r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::CIA1 =>      cia1.clone(),
         MemoryAreaKind::CIA2 =>      cia2.clone(),
         MemoryAreaKind::ColorRam =>  color_ram.clone() as R2C<dyn MemoryArea>,
-        MemoryAreaKind::SID =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::SID =>       r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
         MemoryAreaKind::VIC =>       vic20.clone(),
         MemoryAreaKind::CharRom =>   r2c_new!(rom::stock::CHAR_ROM) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::Unmapped =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::CartRomLow =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::CartRomHi =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::Unmapped =>      r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CartRomLow =>      r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CartRomHi =>      r2c_new!(HeadlessChickenMemoryArea) as R2C<dyn MemoryArea>,
     };
 
-    let mut mpu = mos6510::MOS6510::new(areas, ram.clone());
+    let debugger = r2c_new!(mos6510::Debugger::default());
+    debugger.borrow_mut().add_pc_breakpoint(0);
+    let debugger_cli = r2c_new!(debugger_cli::DebuggerCli::default());
+
+    let sigint_pending = Arc::new(std::sync::atomic::AtomicBool::default());
+    signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&sigint_pending)).expect("cannot register SIGINT handler");
+
+    let mut mpu = mos6510::MOS6510::new(areas, ram.clone(), debugger.clone(), debugger_cli as R2C<dyn DebuggerUI>);
 
     use spin_sleep::LoopHelper;
 
@@ -92,6 +112,12 @@ fn main() {
 
         if is_vic_cycle {
             vic20.borrow_mut().cycle();
+        }
+
+        if sigint_pending.load(std::sync::atomic::Ordering::SeqCst) {
+            eprintln!("SIGINT CAUGHT");
+            sigint_pending.store(false, std::sync::atomic::Ordering::SeqCst);
+            debugger.borrow_mut().break_after_next_decode();
         }
         mpu.cycle();
 
