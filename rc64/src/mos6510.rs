@@ -55,14 +55,14 @@ impl Display for Flags {
                 write!(formatter, "{}", ch)?;
             };
         }
-        flag!(Flags::CARRY, 'C');
-        flag!(Flags::ZERO, 'Z');
-        flag!(Flags::IRQD, 'I');
-        flag!(Flags::DEC, 'D');
-        flag!(Flags::BRK, 'B');
-        flag!(Flags::UNUSED, 'U');
-        flag!(Flags::OVFL, 'O');
         flag!(Flags::NEG, 'N');
+        flag!(Flags::OVFL, 'V');
+        flag!(Flags::UNUSED, '-');
+        flag!(Flags::BRK, 'B');
+        flag!(Flags::DEC, 'D');
+        flag!(Flags::IRQD, 'I');
+        flag!(Flags::ZERO, 'Z');
+        flag!(Flags::CARRY, 'C');
         fmt::Result::Ok(())
     }
 }
