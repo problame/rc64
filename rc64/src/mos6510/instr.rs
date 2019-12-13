@@ -115,6 +115,15 @@ impl std::fmt::Display for Instr {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct Instr(pub Op, pub Addr);
 
+impl Instr {
+    pub fn op(self) -> Op {
+        self.0
+    }
+    pub fn addr(self) -> Addr {
+        self.1
+    }
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum DecodeErr {
     InvalidOpcode(u8),

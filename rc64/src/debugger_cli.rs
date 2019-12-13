@@ -49,6 +49,7 @@ info                MOS dump
 stack sp            dump stack from sp upward
 stack all           dump entire stack page
 instrlog on|off     enable instruciton logging to console
+brk on|off          trap to debugger on BRK instr (doesn't affect handling of BRK)
 readmem HEXADDR     read memory at address
                     "#
                 ),
@@ -87,6 +88,17 @@ readmem HEXADDR     read memory at address
                         }
                     };
                     mos.debugger_refmut().set_instr_logging_enabled(enabled);
+                }
+                x if x.starts_with("brk ") => {
+                    let enabled = match x {
+                        "brk on" => true,
+                        "brk off" => false,
+                        x => {
+                            println!("unknown command {:?}", x);
+                            continue;
+                        }
+                    };
+                    mos.debugger_refmut().set_break_on_brk(enabled);
                 }
                 "b" => {
                     let dbg = mos.debugger_refmut();

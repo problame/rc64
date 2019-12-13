@@ -1,4 +1,4 @@
-mod instr;
+pub mod instr;
 mod mem;
 
 use crate::ram::RAM;
@@ -207,6 +207,15 @@ pub enum State {
     ExecInstr { instr: Instr, remaining_cycles: usize },
 }
 
+impl State {
+    pub fn decoded_instr(&self) -> Option<&Instr> {
+        match self {
+            State::DecodedInstr(i) => Some(i),
+            _ => None,
+        }
+    }
+}
+
 impl Display for State {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
@@ -225,11 +234,12 @@ pub struct Debugger {
     ea_bps: HashSet<u16>,
     break_after_next_decode: bool,
     instr_logging_enabled: bool,
+    break_on_brk: bool,
 }
 
 impl Default for Debugger {
     fn default() -> Self {
-        Debugger { pc_bps: HashSet::default(), ea_bps: HashSet::default(), break_after_next_decode: false, instr_logging_enabled: false }
+        Debugger { pc_bps: HashSet::default(), ea_bps: HashSet::default(), break_after_next_decode: false, instr_logging_enabled: false, break_on_brk: false }
     }
 }
 
@@ -267,9 +277,17 @@ impl Debugger {
     pub fn ea_breakpoints(&self) -> Vec<u16> {
         self.ea_bps.iter().cloned().collect()
     }
+
+    pub fn set_break_on_brk(&mut self, enabled: bool) {
+        self.break_on_brk = enabled;
+    }
+
     fn post_decode_pre_apply_cb(&mut self, mos: &MOS6510) -> DebuggerPostDecodePreApplyCbAction {
         if self.instr_logging_enabled {
             println!("INSTRLOG: {} REG: {}", mos.state(), mos.reg()) // FIXME to DebuggerUI
+        }
+        if self.break_on_brk && (mos.state.decoded_instr().unwrap().op() == crate::mos6510::instr::Op::BRK || mos.reg.p.contains(Flags::BRK)) {
+            return DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt;
         }
         if self.break_after_next_decode || self.pc_bps.contains(&mos.reg.pc) {
             self.break_after_next_decode = false;
