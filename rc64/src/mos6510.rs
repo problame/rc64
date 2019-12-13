@@ -544,9 +544,9 @@ impl MOS6510 {
 
             /***************** Stack Operations ******************/
             // The 6502 microprocessor supports a 256 byte stack fixed between memory locations $0100 and $01FF.
-            // A special 8-bit register, S, is used to keep track of the next free byte of stack space.
+            // A special 8-bit register, S, is used to keep track of the NEXT FREE BYTE of stack space.
             // Pushing a byte on to the stack causes the value to be stored at the current free location (e.g. $0100,S)
-            // and then the stack pointer is post decremented. Pull operations reverse this procedure.
+            // AND THEN the stack pointer is post decremented. Pull operations reverse this procedure.
             //
             // The stack register can only be accessed by transferring its value to or from the X register.
             //
@@ -559,26 +559,26 @@ impl MOS6510 {
             Instr(TXS, Imp) => args.reg.sp = args.reg.x,
             // PHA 	Push accumulator on stack
             Instr(PHA, Imp) => {
+                args.mem.write(args.reg.sp_abs(), args.reg.a);
                 args.reg.sp = args.reg.sp.overflowing_sub(1).0; // TODO instrument overflow
-                args.mem.write(args.reg.sp_abs(), args.reg.a)
             },
             // PHP 	Push processor status on stack
             Instr(PHP, Imp) => {
+                args.mem.write(args.reg.sp_abs(), args.reg.p.bits());
                 args.reg.sp = args.reg.sp.overflowing_sub(1).0; // TODO instrument overflow
-                args.mem.write(args.reg.sp_abs(), args.reg.p.bits())
             },
             // PLA 	Pull accumulator from stack 	N,Z
             Instr(PLA, Imp) => {
-                args.reg.lda(args.mem.read(args.reg.sp_abs()));
                 args.reg.sp = args.reg.sp.overflowing_add(1).0; // TODO instrument overflow
+                args.reg.lda(args.mem.read(args.reg.sp_abs()));
             }
             // PLP 	Pull processor status from stack 	All
             Instr(PLP, Imp) => {
+                args.reg.sp = args.reg.sp.overflowing_add(1).0; // TODO instrument overflow
                 match Flags::from_bits(args.mem.read(args.reg.sp_abs())) {
                     Some(p) => args.reg.p = p,
                     None => unimplemented!(), // TODO processor behavior if unused bit is set?
                 }
-                args.reg.sp = args.reg.sp.overflowing_add(1).0; // TODO instrument overflow
             }
 
             /***************** Logical ******************/
@@ -714,14 +714,16 @@ impl MOS6510 {
             Instr(JMP, Abs(a)) => *args.next_pc = Some(a),
             // JSR 	Jump to a subroutine
             Instr(JSR, Abs(a)) => {
-                args.reg.sp -= 2; // TODO stack overflow instrumentation
+                args.reg.sp -= 1; // TODO stack overflow instrumentation
                 args.mem.write_u16(args.reg.sp_abs(), args.next_pc.unwrap() - 1);
+                args.reg.sp -= 1; // TODO stack overflow instrumentation
                 *args.next_pc = Some(a);
             }
             // RTS 	Return from subroutine
             Instr(RTS, Imp) => {
+                args.reg.sp += 1;
                 *args.next_pc = Some(args.mem.read_u16(args.reg.sp_abs()).overflowing_add(1).0);
-                args.reg.sp += 2;
+                args.reg.sp += 1;
             }
 
             /***************** Branches ******************/
@@ -769,11 +771,12 @@ impl MOS6510 {
 
             // BRK 	Force an interrupt 	B
             Instr(BRK, Imp) => {
-                args.reg.sp -= 2;
-                args.mem.write_u16(args.reg.sp_abs(), args.reg.pc);
-
                 args.reg.sp -= 1;
+                args.mem.write_u16(args.reg.sp_abs(), args.reg.pc);
+                args.reg.sp -= 1;
+
                 args.mem.write(args.reg.sp_abs(), args.reg.p.bits());
+                args.reg.sp -= 1;
 
                 args.reg.p.set(Flags::BRK, true);
                 *args.next_pc = Some(args.mem.read_u16(0xFFFE));
@@ -782,13 +785,16 @@ impl MOS6510 {
             Instr(NOP, Imp) => (),
             // RTI 	Return from Interrupt 	All
             Instr(RTI, Imp) => {
+                unimplemented!(); // TODO not sure if stack handling is correct, see this commit's message.
+                                  // compare to JSR and RTS
+                args.reg.sp += 1;
                 args.reg.p = match Flags::from_bits(args.mem.read(args.reg.sp_abs())) {
                     Some(f) => f,
                     None => unimplemented!(), // TODO (behaviorwith unset bits?)
                 };
                 args.reg.sp += 1;
                 *args.next_pc = Some(args.mem.read_u16(args.reg.sp_abs()));
-                args.reg.sp += 2;
+                args.reg.sp += 1;
                 // restore of p implicitly resets BRK
             },
 
