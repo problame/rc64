@@ -658,7 +658,7 @@ impl MOS6510 {
             // the overflow bit in the carry flag (C).
 
             // ASL 	Arithmetic Shift Left 	N,Z,C
-            Instr(ASL, Acc) => {
+            Instr(ASL, Imp) => {
                 let (carry, v) = MOS6510::asl(args.reg.a);
                 args.reg.lda(v);
                 args.reg.set_nzc_flags(v, carry);
@@ -682,7 +682,7 @@ impl MOS6510 {
                 args.reg.p.set(Flags::NEG, false);
             },
             // ROL 	Rotate Left 	N,Z,C
-            Instr(ROL, Acc) => {
+            Instr(ROL, Imp) => {
                 let (carry, res) = MOS6510::rol(args.reg.a, args.reg.p.contains(Flags::CARRY));
                 args.reg.lda(res);
                 args.reg.set_nzc_flags(res, carry);
@@ -693,7 +693,7 @@ impl MOS6510 {
                 args.reg.set_nzc_flags(res, carry);
             }
             // ROR 	Rotate Right 	N,Z,C
-            Instr(ROR, Acc) => {
+            Instr(ROR, Imp) => {
                 let (carry, res) = MOS6510::ror(args.reg.a, args.reg.p.contains(Flags::CARRY));
                 args.reg.lda(res);
                 args.reg.set_nzc_flags(res, carry);
