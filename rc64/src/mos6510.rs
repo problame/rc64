@@ -193,7 +193,7 @@ impl Regs {
         let (res, ovfl) = minuend.overflowing_sub(subtrahend); // Yes, carry not included
         self.p.set(Flags::ZERO, res == 0);
         self.p.set(Flags::NEG, (res as i8) < 0);
-        self.p.set(Flags::CARRY, ovfl); // ??
+        self.p.set(Flags::CARRY, !ovfl);
     }
 }
 
