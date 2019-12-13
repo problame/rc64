@@ -1,3 +1,4 @@
+use crate::cia::keyboard::KeyboardMatrix;
 use crate::interrupt::Interrupt;
 use crate::utils::R2C;
 use crate::vic20::VIC20;
@@ -160,7 +161,7 @@ pub enum DataPortBackend<T> {
     /// Register B it is 0 (all inputs).  This corresponds to the setting used when reading the keyboard
     /// (the keyboard column number is written to Data Port A, and the row number is then read in Data
     /// Port B).
-    CIA1 { keyboard: KeyboardBackend, joystick1: JoystickBackend, joystick2: JoystickBackend, lightpen: LigthpenBackend, paddles: PaddlesBackend },
+    CIA1 { peripherals: R2C<dyn PeripheralDevicesBackend> },
 
     /// Location Range: 56576-56577 ($DD00-$DD01)
     /// CIA #2 Data Ports A and B
@@ -291,10 +292,18 @@ pub enum DataPortBackend<T> {
     CIA2 { vic: R2C<VIC20<T>>, serial_bus: SerialBusBackend, rs232: RS232Backend, userport: UserportBackend },
 }
 
-pub struct KeyboardBackend;
-pub struct JoystickBackend;
-pub struct LigthpenBackend;
-pub struct PaddlesBackend;
+pub trait PeripheralDevicesBackend {
+    fn get_current_keyboard_matrix(&self) -> KeyboardMatrix;
+}
+
+impl<T> DataPortBackend<T> {
+    pub(super) fn cycle(&mut self) -> Option<Interrupt> {
+        // if let DataPortBackend::CIA1 { peripherals } = self {
+        //     println!("{}", peripherals.borrow().get_current_keyboard_matrix());
+        // }
+        None
+    }
+}
 
 /// Location Range: 56324-56327 ($DC04-$DC07)
 /// Timers A and B Low and High Bytes
@@ -538,6 +547,13 @@ impl TimerBackend {
 /// 300 POKE 1240,58:POKE 1243,58:POKE 1246,58:GOTO 20
 #[derive(Default)]
 pub struct TimeOfDayBackend {}
+
+impl TimeOfDayBackend {
+    pub(super) fn cycle(&mut self) -> Option<Interrupt> {
+        // TODO self.interrupt_be.generate(InterruptSources::TOD_ALARM)
+        None
+    }
+}
 
 /// 56332         $DC0C          CIASDR
 /// Serial Data Port

@@ -47,7 +47,7 @@ fn main() {
 
     let vic20 = r2c_new!(vic20::VIC20::new(rom::stock::CHAR_ROM, ram.clone(), color_ram.clone(), screen.clone()));
 
-    let cia1 = r2c_new!(CIA::<()>::new(CIAKind::Chip1));
+    let cia1 = r2c_new!(CIA::<()>::new(CIAKind::Chip1 { peripherals: screen.clone() }));
     let cia2 = r2c_new!(CIA::new(CIAKind::Chip2 { vic: vic20.clone() }));
 
     use mos6510::*;
