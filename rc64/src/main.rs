@@ -19,8 +19,10 @@ mod debugger_cli;
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::utils::R2C;
-
 use std::sync::Arc;
+
+use std::path::PathBuf;
+use structopt::StructOpt;
 
 struct UnimplMemoryArea;
 impl mos6510::MemoryArea for UnimplMemoryArea {
@@ -42,13 +44,22 @@ impl mos6510::MemoryArea for HeadlessChickenMemoryArea {
     }
 }
 
+#[derive(Debug, StructOpt)]
+struct Args {
+    #[structopt(long, help="use custom kernal image")]
+    kernal: Option<PathBuf>,
+}
+
 fn main() {
-    let kernal = if std::env::args().len() == 2 {
-        let kernal_img = std::fs::read(std::env::args().nth(1).unwrap()).expect("read custom kernal image failed");
-        r2c_new!(rom::ROM::from(kernal_img)) as R2C<dyn MemoryArea>
-    } else {
-        r2c_new!(rom::stock::KERNAL) as R2C<dyn MemoryArea>
-    };
+    let args = Args::from_args();
+
+    let kernal = args.kernal.map_or_else(
+        || r2c_new!(rom::stock::KERNAL) as R2C<dyn MemoryArea>,
+        |p| {
+            let kernal_img = std::fs::read(p).expect("read custom kernal image failed");
+            r2c_new!(rom::ROM::from(kernal_img)) as R2C<dyn MemoryArea>
+        },
+    );
 
     let ram = r2c_new!(RAM::default());
     let color_ram = r2c_new!(ColorRAM::default());
