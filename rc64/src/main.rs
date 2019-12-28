@@ -37,7 +37,8 @@ impl mos6510::MemoryArea for UnimplMemoryArea {
 
 fn main() {
     let kernal = if std::env::args().len() == 2 {
-        let kernal_img = std::fs::read(std::env::args().nth(1).unwrap()).expect("read custom kernal image failed");
+        let kernal_img =
+            std::fs::read(std::env::args().nth(1).unwrap()).expect("read custom kernal image failed");
         r2c_new!(rom::ROM::from(kernal_img)) as R2C<dyn MemoryArea>
     } else {
         r2c_new!(rom::stock::KERNAL) as R2C<dyn MemoryArea>
@@ -48,7 +49,8 @@ fn main() {
 
     let screen = r2c_new!(backend::fb_minifb::Minifb::new());
 
-    let vic20 = r2c_new!(vic20::VIC20::new(rom::stock::CHAR_ROM, ram.clone(), color_ram.clone(), screen.clone()));
+    let vic20 =
+        r2c_new!(vic20::VIC20::new(rom::stock::CHAR_ROM, ram.clone(), color_ram.clone(), screen.clone()));
 
     let cia1 = r2c_new!(CIA::<()>::new(CIAKind::Chip1 { peripherals: screen.clone() }));
     let cia2 = r2c_new!(CIA::new(CIAKind::Chip2 { vic: vic20.clone() }));
@@ -77,9 +79,11 @@ fn main() {
     let debugger_cli = r2c_new!(debugger_cli::DebuggerCli::default());
 
     let sigint_pending = Arc::new(std::sync::atomic::AtomicBool::default());
-    signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&sigint_pending)).expect("cannot register SIGINT handler");
+    signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&sigint_pending))
+        .expect("cannot register SIGINT handler");
 
-    let mut mpu = mos6510::MOS6510::new(areas, ram.clone(), debugger.clone(), debugger_cli as R2C<dyn DebuggerUI>);
+    let mut mpu =
+        mos6510::MOS6510::new(areas, ram.clone(), debugger.clone(), debugger_cli as R2C<dyn DebuggerUI>);
 
     use spin_sleep::LoopHelper;
 

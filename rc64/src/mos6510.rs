@@ -51,7 +51,11 @@ impl Display for Flags {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         macro_rules! flag {
             ($flag:expr, $ch:literal) => {
-                let ch = if self.contains($flag) { $ch.to_uppercase().to_string() } else { $ch.to_lowercase().to_string() };
+                let ch = if self.contains($flag) {
+                    $ch.to_uppercase().to_string()
+                } else {
+                    $ch.to_lowercase().to_string()
+                };
                 write!(formatter, "{}", ch)?;
             };
         }
@@ -225,7 +229,9 @@ impl Display for State {
             State::Reset => write!(f, "reset"),
             State::BeginInstr => write!(f, "pre_decode"),
             State::DecodedInstr(i) => write!(f, "decoded {}", i),
-            State::ExecInstr { instr, remaining_cycles } => write!(f, "exec[{} cycles left] {}", remaining_cycles, instr),
+            State::ExecInstr { instr, remaining_cycles } => {
+                write!(f, "exec[{} cycles left] {}", remaining_cycles, instr)
+            }
         }
     }
 }
@@ -242,7 +248,13 @@ pub struct Debugger {
 
 impl Default for Debugger {
     fn default() -> Self {
-        Debugger { pc_bps: HashSet::default(), ea_bps: HashSet::default(), break_after_next_decode: false, instr_logging_enabled: false, break_on_brk: false }
+        Debugger {
+            pc_bps: HashSet::default(),
+            ea_bps: HashSet::default(),
+            break_after_next_decode: false,
+            instr_logging_enabled: false,
+            break_on_brk: false,
+        }
     }
 }
 
@@ -289,7 +301,10 @@ impl Debugger {
         if self.instr_logging_enabled {
             println!("INSTRLOG: {} REG: {}", mos.state(), mos.reg()) // FIXME to DebuggerUI
         }
-        if self.break_on_brk && (mos.state.decoded_instr().unwrap().op() == crate::mos6510::instr::Op::BRK || mos.reg.p.contains(Flags::BRK)) {
+        if self.break_on_brk
+            && (mos.state.decoded_instr().unwrap().op() == crate::mos6510::instr::Op::BRK
+                || mos.reg.p.contains(Flags::BRK))
+        {
             return DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt;
         }
         if self.break_after_next_decode || self.pc_bps.contains(&mos.reg.pc) {
@@ -307,11 +322,20 @@ impl Debugger {
 }
 
 pub trait DebuggerUI {
-    fn handle_post_decode_pre_apply_action(&mut self, action: DebuggerPostDecodePreApplyCbAction, mos: &MOS6510);
+    fn handle_post_decode_pre_apply_action(
+        &mut self,
+        action: DebuggerPostDecodePreApplyCbAction,
+        mos: &MOS6510,
+    );
 }
 
 impl MOS6510 {
-    pub fn new(areas: Areas, ram: Rc<RefCell<RAM>>, debugger: R2C<Debugger>, debugger_ui: R2C<dyn DebuggerUI>) -> Self {
+    pub fn new(
+        areas: Areas,
+        ram: Rc<RefCell<RAM>>,
+        debugger: R2C<Debugger>,
+        debugger_ui: R2C<dyn DebuggerUI>,
+    ) -> Self {
         let mem = MemoryView::new(areas, ram);
         let reg = Regs::default();
         MOS6510 { mem, reg, state: State::Reset, debugger, debugger_ui }
@@ -339,7 +363,12 @@ impl MOS6510 {
         }
 
         let (next_instr, len) = match instr::decode_instr(&instrbuf[..]) {
-            Err(e) => panic!("instruction decode error: {:?}\nregs: {}\nstack:\n\t{}", e, self.reg(), self.dump_stack_lines(true).join("\n\t")),
+            Err(e) => panic!(
+                "instruction decode error: {:?}\nregs: {}\nstack:\n\t{}",
+                e,
+                self.reg(),
+                self.dump_stack_lines(true).join("\n\t")
+            ),
             Ok((instr, len)) => (instr, len),
         };
         self.state = State::DecodedInstr(next_instr);
@@ -357,7 +386,11 @@ impl MOS6510 {
         self.apply_instr(next_instr, self.reg.pc.checked_add(len as u16));
         match self.state {
             State::ExecInstr { ref mut remaining_cycles, .. } => {
-                assert!(*remaining_cycles >= 2, "remaining_cycles = {} (minimum cycle count is 2)", remaining_cycles);
+                assert!(
+                    *remaining_cycles >= 2,
+                    "remaining_cycles = {} (minimum cycle count is 2)",
+                    remaining_cycles
+                );
                 // we already did one cycle in apply_instr
                 *remaining_cycles -= 1;
             }
@@ -370,7 +403,11 @@ impl MOS6510 {
     }
 
     pub fn dump_stack_lines(&self, from_sp_upward: bool) -> Vec<String> {
-        Vec::from_iter(self.copy_stack(from_sp_upward).into_iter().map(|(addr, val)| format!("0x{:04x} = 0x{:02x}", addr, val)))
+        Vec::from_iter(
+            self.copy_stack(from_sp_upward)
+                .into_iter()
+                .map(|(addr, val)| format!("0x{:04x} = 0x{:02x}", addr, val)),
+        )
     }
 
     pub fn copy_stack(&self, from_sp_upward: bool) -> Vec<(u16, u8)> {
@@ -843,9 +880,27 @@ mod tests {
         fn adc() {
             // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
             let tests = [
-                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0x50, post_a: 0xa0, post_flags: Flags::OVFL | Flags::NEG },
-                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0xd0, post_a: 0x20, post_flags: Flags::CARRY },
-                Case { pre_a: 0xd0, pre_flags: Flags::empty(), v: 0x90, post_a: 0x60, post_flags: Flags::CARRY | Flags::OVFL },
+                Case {
+                    pre_a: 0x50,
+                    pre_flags: Flags::empty(),
+                    v: 0x50,
+                    post_a: 0xa0,
+                    post_flags: Flags::OVFL | Flags::NEG,
+                },
+                Case {
+                    pre_a: 0x50,
+                    pre_flags: Flags::empty(),
+                    v: 0xd0,
+                    post_a: 0x20,
+                    post_flags: Flags::CARRY,
+                },
+                Case {
+                    pre_a: 0xd0,
+                    pre_flags: Flags::empty(),
+                    v: 0x90,
+                    post_a: 0x60,
+                    post_flags: Flags::CARRY | Flags::OVFL,
+                },
             ];
             for case in &tests {
                 println!("running:\n{:#?}", case);
@@ -862,8 +917,20 @@ mod tests {
         fn sdc() {
             // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
             let tests = [
-                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0xf0, post_a: 0x60, post_flags: Flags::empty() },
-                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0xb0, post_a: 0xa0, post_flags: Flags::OVFL },
+                Case {
+                    pre_a: 0x50,
+                    pre_flags: Flags::empty(),
+                    v: 0xf0,
+                    post_a: 0x60,
+                    post_flags: Flags::empty(),
+                },
+                Case {
+                    pre_a: 0x50,
+                    pre_flags: Flags::empty(),
+                    v: 0xb0,
+                    post_a: 0xa0,
+                    post_flags: Flags::OVFL,
+                },
             ];
             for case in &tests {
                 println!("running:\n{:#?}", case);

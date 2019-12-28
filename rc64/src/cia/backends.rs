@@ -289,7 +289,12 @@ pub enum DataPortBackend<T> {
     ///
     /// See also the sample program showing how to configure your 64 like a
     /// PET at location 43 ($2B).
-    CIA2 { vic: R2C<VIC20<T>>, serial_bus: SerialBusBackend, rs232: RS232Backend, userport: UserportBackend },
+    CIA2 {
+        vic: R2C<VIC20<T>>,
+        serial_bus: SerialBusBackend,
+        rs232: RS232Backend,
+        userport: UserportBackend,
+    },
 }
 
 pub trait PeripheralDevicesBackend {
@@ -368,7 +373,8 @@ pub(super) enum TimerInputModeB {
 impl TimerInputMode {
     fn count_mos_cycles(&self) -> bool {
         match self {
-            TimerInputMode::A(TimerInputModeA::MosCycles) | TimerInputMode::B(TimerInputModeB::MosCycles) => true,
+            TimerInputMode::A(TimerInputModeA::MosCycles)
+            | TimerInputMode::B(TimerInputModeB::MosCycles) => true,
             _ => false,
         }
     }

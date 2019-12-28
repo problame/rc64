@@ -73,7 +73,12 @@ impl<T: 'static> CIA<T> {
 
         let data_port = match kind {
             Chip1 { peripherals } => r2c_new!(DataPortBackend::CIA1 { peripherals }),
-            Chip2 { vic } => r2c_new!(DataPortBackend::CIA2 { vic, serial_bus: SerialBusBackend {}, rs232: RS232Backend {}, userport: UserportBackend {} }),
+            Chip2 { vic } => r2c_new!(DataPortBackend::CIA2 {
+                vic,
+                serial_bus: SerialBusBackend {},
+                rs232: RS232Backend {},
+                userport: UserportBackend {}
+            }),
         };
 
         let int_be = r2c_new!(InterruptBackend::default());
@@ -110,7 +115,12 @@ impl<T: 'static> CIA<T> {
     }
 
     pub fn cycle(&self) -> Option<Interrupt> {
-        self.tod.borrow_mut().cycle().or(self.timer_a.borrow_mut().cycle()).or(self.timer_b.borrow_mut().cycle()).or(self.data_port.borrow_mut().cycle())
+        self.tod
+            .borrow_mut()
+            .cycle()
+            .or(self.timer_a.borrow_mut().cycle())
+            .or(self.timer_b.borrow_mut().cycle())
+            .or(self.data_port.borrow_mut().cycle())
     }
 }
 

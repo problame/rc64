@@ -34,7 +34,8 @@ impl DebuggerCli {
 
             // parse and dispatch actions
             lazy_static! {
-                static ref BREAKPOINT_OP_RE: Regex = Regex::new(r"^([bd])\s+(pc|ea)\s+([\dxXa-fA-F]+)").unwrap();
+                static ref BREAKPOINT_OP_RE: Regex =
+                    Regex::new(r"^([bd])\s+(pc|ea)\s+([\dxXa-fA-F]+)").unwrap();
             }
             let breakpoint_op = BREAKPOINT_OP_RE.captures(&line);
             match line.as_str() {
@@ -111,9 +112,18 @@ readmem HEXADDR     read memory at address
                     continue;
                 }
                 _ if breakpoint_op.is_some() => {
-                    let (opc, ea_or_pc, pc) = breakpoint_op.map(|c| (c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str(), c.get(3).unwrap().as_str())).unwrap();
+                    let (opc, ea_or_pc, pc) = breakpoint_op
+                        .map(|c| {
+                            (
+                                c.get(1).unwrap().as_str(),
+                                c.get(2).unwrap().as_str(),
+                                c.get(3).unwrap().as_str(),
+                            )
+                        })
+                        .unwrap();
                     let addr: u16 = {
-                        let radix = if pc.to_lowercase().chars().all(|ch| ch.is_numeric()) { 10 } else { 16 };
+                        let radix =
+                            if pc.to_lowercase().chars().all(|ch| ch.is_numeric()) { 10 } else { 16 };
                         match u16::from_str_radix(&pc, radix) {
                             Ok(pc) => pc,
                             Err(e) => {
@@ -160,7 +170,11 @@ readmem HEXADDR     read memory at address
 }
 
 impl mos6510::DebuggerUI for DebuggerCli {
-    fn handle_post_decode_pre_apply_action(&mut self, action: mos6510::DebuggerPostDecodePreApplyCbAction, mos: &mos6510::MOS6510) {
+    fn handle_post_decode_pre_apply_action(
+        &mut self,
+        action: mos6510::DebuggerPostDecodePreApplyCbAction,
+        mos: &mos6510::MOS6510,
+    ) {
         assert_eq!(action, mos6510::DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt);
         self.do_loop(mos);
     }

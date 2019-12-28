@@ -349,6 +349,9 @@ impl Register for InterruptControl {
 
     fn write(&self, val: u8) {
         bitflags! {struct WriteMode: u8 { const SET = 0b10000000; }};
-        self.0.borrow_mut().enabled.set(InterruptSources::from_bits_truncate(val), WriteMode::from_bits_truncate(val).contains(WriteMode::SET))
+        self.0.borrow_mut().enabled.set(
+            InterruptSources::from_bits_truncate(val),
+            WriteMode::from_bits_truncate(val).contains(WriteMode::SET),
+        )
     }
 }

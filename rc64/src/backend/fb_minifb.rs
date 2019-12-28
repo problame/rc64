@@ -24,7 +24,8 @@ impl Minifb {
             std::thread::spawn(move || {
                 let mut fb_winopts = WindowOptions::default();
                 fb_winopts.scale = minifb::Scale::X2;
-                let mut fb = Window::new("Test - ESC to exit", SCREEN_WIDTH, SCREEN_HEIGHT, fb_winopts).unwrap();
+                let mut fb =
+                    Window::new("Test - ESC to exit", SCREEN_WIDTH, SCREEN_HEIGHT, fb_winopts).unwrap();
 
                 loop {
                     std::thread::sleep(std::time::Duration::from_micros(16666));

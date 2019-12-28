@@ -111,7 +111,11 @@ enum BankingStateUpdate {
 
 impl Default for BankingState {
     fn default() -> BankingState {
-        let mut b = BankingState { cpu_control_lines: 0b00_00_01_11, expansion_port: 0b00_00_00_11, banking: Vec::with_capacity(20) };
+        let mut b = BankingState {
+            cpu_control_lines: 0b00_00_01_11,
+            expansion_port: 0b00_00_00_11,
+            banking: Vec::with_capacity(20),
+        };
         b.update_banking();
         b
     }
@@ -259,7 +263,13 @@ struct Segment {
 
 impl Segment {
     fn relative_address(&self, absolute_addr: u16) -> Option<u16> {
-        absolute_addr.checked_sub(self.base).and_then(|relative_addr| if relative_addr < self.len { Some(relative_addr) } else { None })
+        absolute_addr.checked_sub(self.base).and_then(|relative_addr| {
+            if relative_addr < self.len {
+                Some(relative_addr)
+            } else {
+                None
+            }
+        })
     }
 }
 
