@@ -169,8 +169,11 @@ impl Regs {
     // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
     #[inline]
     fn sub_from_a_with_carry_and_set_carry(&mut self, v: u8) {
-        unimplemented!();
-        self.add_to_a_with_carry_and_set_carry(!v); // TODO doesn't pass test case
+        if cfg!(feature = "headless-chicken") {
+            self.add_to_a_with_carry_and_set_carry(!v); // TODO doesn't pass test case
+        } else {
+            unimplemented!()
+        }
     }
 
     #[inline]
@@ -470,7 +473,7 @@ impl MOS6510 {
 
         let effective_addr_load = effective_addr.map(|a| self.mem.read(a.effective));
 
-        debug_assert_eq!(self.state, State::BeginInstr);
+        //debug_assert_eq!(self.state, State::BeginInstr);
         self.state = State::ExecInstr { remaining_cycles: instr.cycles(effective_addr), instr };
 
         struct InstrMatchArgs<'a> {
@@ -785,17 +788,21 @@ impl MOS6510 {
             Instr(NOP, Imp) => (),
             // RTI 	Return from Interrupt 	All
             Instr(RTI, Imp) => {
-                unimplemented!(); // TODO not sure if stack handling is correct, see this commit's message.
-                                  // compare to JSR and RTS
-                args.reg.sp += 1;
-                args.reg.p = match Flags::from_bits(args.mem.read(args.reg.sp_abs())) {
-                    Some(f) => f,
-                    None => unimplemented!(), // TODO (behaviorwith unset bits?)
-                };
-                args.reg.sp += 1;
-                *args.next_pc = Some(args.mem.read_u16(args.reg.sp_abs()));
-                args.reg.sp += 1;
-                // restore of p implicitly resets BRK
+                if cfg!(feature = "headless-chicken") {
+                    // TODO not sure if stack handling is correct, see this commit's message.
+                    // compare to JSR and RTS
+                    args.reg.sp += 1;
+                    args.reg.p = match Flags::from_bits(args.mem.read(args.reg.sp_abs())) {
+                        Some(f) => f,
+                        None => unimplemented!(), // TODO (behaviorwith unset bits?)
+                    };
+                    args.reg.sp += 1;
+                    *args.next_pc = Some(args.mem.read_u16(args.reg.sp_abs()));
+                    args.reg.sp += 1;
+                    // restore of p implicitly resets BRK
+                } else {
+                    unimplemented!();
+                }
             },
 
 

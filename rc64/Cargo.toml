@@ -8,6 +8,10 @@ edition = "2018"
 
 default-run = "rc64"
 
+[features]
+default = [ "headless-chicken" ]
+headless-chicken = []
+
 
 [[bin]]
 name = "rc64"

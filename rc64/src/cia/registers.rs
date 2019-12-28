@@ -65,10 +65,10 @@ pub(super) enum Precision {
 /// Bit 7:  Serial bus data input
 impl<T> Register for DataA<T> {
     fn read(&self) -> u8 {
-        unimplemented!()
+        unimpl!(0)
     }
     fn write(&self, _val: u8) {
-        unimplemented!()
+        unimpl!()
     }
 }
 
@@ -85,10 +85,10 @@ impl<T> Register for DataA<T> {
 /// Bit 7:  Select Bit 7 of Data Port A for input or output (0=input, 1=output)
 impl<T> Register for DataDirectionA<T> {
     fn read(&self) -> u8 {
-        unimplemented!()
+        unimpl!(0)
     }
     fn write(&self, _val: u8) {
-        unimplemented!()
+        unimpl!()
     }
 }
 
@@ -128,10 +128,10 @@ impl<T> Register for DataDirectionA<T> {
 ///         Toggle or pulse data output for Timer B
 impl<T> Register for DataB<T> {
     fn read(&self) -> u8 {
-        unimplemented!()
+        unimpl!(0)
     }
     fn write(&self, _val: u8) {
-        unimplemented!()
+        unimpl!()
     }
 }
 
@@ -148,10 +148,10 @@ impl<T> Register for DataB<T> {
 /// Bit 7:  Select Bit 7 of Data Port B for input or output (0=input, 1=output)
 impl<T> Register for DataDirectionB<T> {
     fn read(&self) -> u8 {
-        unimplemented!()
+        unimpl!(0)
     }
     fn write(&self, _val: u8) {
-        unimplemented!()
+        unimpl!()
     }
 }
 
@@ -266,10 +266,10 @@ impl Register for Timer {
 /// writing to the TOD registers sets the TOD clock.
 impl Register for ControlTimer {
     fn read(&self) -> u8 {
-        unimplemented!()
+        unimpl!(0)
     }
     fn write(&self, _val: u8) {
-        unimplemented!()
+        unimpl!()
     }
 }
 
@@ -302,19 +302,19 @@ impl Register for ControlTimer {
 /// Bit 7:  AM/PM Flag (1=PM, 0=AM)
 impl Register for RTClock {
     fn read(&self) -> u8 {
-        unimplemented!()
+        unimpl!(0)
     }
     fn write(&self, _val: u8) {
-        unimplemented!()
+        unimpl!()
     }
 }
 
 impl Register for SerialShift {
     fn read(&self) -> u8 {
-        unimplemented!()
+        unimpl!(0)
     }
     fn write(&self, _val: u8) {
-        unimplemented!()
+        unimpl!()
     }
 }
 

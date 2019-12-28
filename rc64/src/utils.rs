@@ -9,3 +9,20 @@ macro_rules! r2c_new {
         Rc::new(RefCell::new($val))
     }};
 }
+
+macro_rules! unimpl {
+    ($retval: expr) => {
+        if cfg!(feature = "headless-chicken") {
+            return $retval;
+        } else {
+            unimplemented!()
+        }
+    };
+    () => {
+        if cfg!(not(feature = "headless-chicken")) {
+            unimplemented!()
+        } else {
+            ()
+        }
+    };
+}
