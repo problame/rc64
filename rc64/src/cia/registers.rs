@@ -191,7 +191,7 @@ impl Register for Timer {
 /// Bit 3:  Timer A run mode (1=one-shot, 0=continuous)
 /// Bit 4:  Force latched value to be loaded to Timer A counter (1=force load
 ///         strobe)
-/// Bit 5:  Timer A input mode (1=count microprocessor cycles, 0=count signals on
+/// Bit 5:  Timer A input mode (0=count microprocessor cycles, 1=count signals on
 ///         CNT line at pin 4 of User Port)
 /// Bit 6:  Serial Port (56332, $DC0C) mode (1=output, 0=input)
 /// Bit 7:  Time of Day Clock frequency (1=50 Hz required on TOD pin, 0=60 Hz)
@@ -268,8 +268,50 @@ impl Register for ControlTimer {
     fn read(&self) -> u8 {
         unimpl!(0)
     }
-    fn write(&self, _val: u8) {
-        unimpl!()
+
+    fn write(&self, val: u8) {
+        let mut timer = self.0.borrow_mut();
+        match timer.input_mode {
+            TimerInputMode::A(_) => {
+                let flags = TimerACtrl::from_bits(val).expect("Every bit should be mapped");
+
+                timer.running = flags.contains(TimerACtrl::START);
+                // TODO timer output mode
+                timer.underflow_mode = if flags.contains(TimerACtrl::RUN_MODE_ONE_SHOT) {
+                    TimerUnderflowMode::OneShot
+                } else {
+                    TimerUnderflowMode::Continuous
+                };
+
+                if flags.contains(TimerACtrl::FORCE_LOAD_LATCH) {
+                    timer.value = timer.latch;
+                }
+
+                timer.input_mode =
+                    TimerInputMode::A(if flags.contains(TimerACtrl::INPUT_COUNT_USER_PORT_CNT_LINE) {
+                        TimerInputModeA::UserPortCNTLine
+                    } else {
+                        TimerInputModeA::MosCycles
+                    });
+
+                // TODO serial port output mode
+                // TODO tod freq
+            }
+            TimerInputMode::B(_) => unimpl!(),
+        }
+    }
+}
+
+bitflags! {
+    struct TimerACtrl: u8 {
+        const START                          = 0b0000_0001;
+        const OUTPUT_TO_PORT_B               = 0b0000_0010;
+        const OUTPUT_PORT_B_TOGGLE_MODE      = 0b0000_0100;
+        const RUN_MODE_ONE_SHOT              = 0b0000_1000;
+        const FORCE_LOAD_LATCH               = 0b0001_0000;
+        const INPUT_COUNT_USER_PORT_CNT_LINE = 0b0010_0000;
+        const SERIAL_PORT_MODE_OUTPUT        = 0b0100_0000;
+        const TOD_FREQ_50HZ                  = 0b1000_0000;
     }
 }
 
