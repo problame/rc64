@@ -172,7 +172,7 @@ impl BankingState {
             }};
             ($kind:expr, $base:expr, $end_incl:expr ) => {
                 debug_assert!($end_incl > $base);
-                self.banking.push(Segment { base: $base, len: $end_incl - $base, kind: $kind })
+                self.banking.push(Segment { base: $base, len: $end_incl - $base + 1, kind: $kind })
             };
         }
         macro_rules! config {

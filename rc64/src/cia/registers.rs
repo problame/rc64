@@ -138,7 +138,7 @@ impl<T> Register for DataB<T> {
     fn read(&self) -> u8 {
         match &*self.0.borrow() {
             DataPortBackend::CIA1 { peripherals, keyboard_columns_queued_for_read } => {
-                let keyboard_matrix = dbg!(peripherals.borrow().get_current_keyboard_matrix());
+                let keyboard_matrix = peripherals.borrow().get_current_keyboard_matrix();
                 assert_eq!(keyboard_matrix.num_rows(), 8);
 
                 let mut selected_keys_pressed_in_rows =
@@ -148,7 +148,7 @@ impl<T> Register for DataB<T> {
                             .enumerate()
                             .map(|(column, read_column)| {
                                 if read_column {
-                                    dbg!(keyboard_matrix[dbg!(MatrixIndex::rc(row as u8, column as u8))])
+                                    keyboard_matrix[MatrixIndex::rc(row as u8, column as u8)]
                                 } else {
                                     false
                                 }
