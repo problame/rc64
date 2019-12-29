@@ -340,6 +340,7 @@ impl<T> DataPortBackend<T> {
 /// write routines use the on-chip I/O port at location 1 for the actual data output to the
 /// cassette, reading and writing to the cassette uses both CIA #1 Timer A and Timer B for timing
 /// the I/O routines.
+#[derive(Debug)]
 pub struct TimerBackend {
     pub(super) latch: u16,
     pub(super) value: u16,
@@ -349,21 +350,23 @@ pub struct TimerBackend {
     pub(super) input_mode: TimerInputMode,
 
     pub(super) interrupt_be: R2C<InterruptBackend>,
+
+    loop_helper: spin_sleep::LoopHelper,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) enum TimerInputMode {
     A(TimerInputModeA),
     B(TimerInputModeB),
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) enum TimerInputModeA {
     MosCycles,
     UserPortCNTLine,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) enum TimerInputModeB {
     MosCycles,
     UserPortCNTLine,
@@ -395,7 +398,7 @@ impl TimerInputMode {
     }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub(super) enum TimerUnderflowMode {
     OneShot,
     Continuous,
@@ -415,6 +418,9 @@ impl TimerBackend {
             },
             underflow_action: other_timer,
             interrupt_be,
+            loop_helper: spin_sleep::LoopHelper::builder()
+                .report_interval_s(5.0)
+                .build_without_target_rate(),
         }
     }
 
@@ -464,6 +470,7 @@ impl TimerBackend {
                 None
             }
             None => {
+                self.loop_helper.loop_start();
                 self.value = self.latch;
                 self.running = match self.underflow_mode {
                     TimerUnderflowMode::OneShot => false,
@@ -472,6 +479,14 @@ impl TimerBackend {
 
                 if let Some(other_timer) = self.underflow_action.as_ref() {
                     other_timer.borrow_mut().step();
+                }
+
+                if let Some(rate) = self.loop_helper.report_rate() {
+                    println!(
+                        "Timer {} underflows / sec = {:.?}",
+                        if let TimerInputMode::A(_) = self.input_mode { "A" } else { "B" },
+                        rate
+                    );
                 }
 
                 self.interrupt_be.borrow_mut().generate(self.input_mode.interrupt_source())
@@ -620,7 +635,7 @@ pub struct SerialShiftBackend {}
 /// allows a multi-interrupt system to read one bit and see if the source of a particular interrupt
 /// was CIA #1.  You should note, however, that reading this register clears it, so you should
 /// preserve its contents in RAM if you want to test more than one bit.
-#[derive(Default)]
+#[derive(Default, Debug)]
 pub struct InterruptBackend {
     pub occured: InterruptSources,
     pub interrupted: bool,

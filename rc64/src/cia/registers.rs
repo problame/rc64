@@ -23,6 +23,7 @@ pub(super) struct InterruptControl(pub R2C<InterruptBackend>);
 
 pub(super) struct ControlTimer(pub R2C<TimerBackend>);
 
+#[derive(Debug)]
 pub(super) enum ByteHalf {
     Low,
     High,
@@ -213,10 +214,16 @@ impl Register for Timer {
             Timer(backend, ByteHalf::High) => (backend.borrow().value >> 8) as u8,
         }
     }
+
     fn write(&self, val: u8) {
         match self {
-            Timer(backend, ByteHalf::Low) => backend.borrow_mut().latch |= val as u16,
-            Timer(backend, ByteHalf::High) => backend.borrow_mut().latch |= (val as u16) << 8,
+            Timer(backend, half) => {
+                let mut be = backend.borrow_mut();
+                match half {
+                    ByteHalf::Low => be.latch = (be.latch & 0xff00) | val as u16,
+                    ByteHalf::High => be.latch = (be.latch & 0x00ff) | ((val as u16) << 8),
+                }
+            }
         }
     }
 }
@@ -336,6 +343,10 @@ impl Register for ControlTimer {
 
                 // TODO serial port output mode
                 // TODO tod freq
+
+                if timer.running {
+                    println!("Starting {:#?}", timer);
+                }
             }
             TimerInputMode::B(_) => unimpl!(),
         }
