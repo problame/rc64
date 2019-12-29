@@ -91,7 +91,14 @@ impl std::fmt::Display for Regs {
 
 const STACK_BOTTOM: u16 = 0x0100;
 const STACK_TOP: u16 = STACK_BOTTOM + 0xff;
-const RESET_VEC: u16 = 0xfffc;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Display)]
+#[repr(u16)]
+pub enum ResetVec {
+    NMI = 0xfffa,
+    RESET = 0xfffc,
+    IRQ = 0xfffe,
+}
 
 impl Default for Regs {
     fn default() -> Self {
@@ -209,7 +216,7 @@ use instr::*;
 
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum State {
-    Reset,
+    Reset(ResetVec),
     BeginInstr,
     DecodedInstr(Instr),
     ExecInstr { instr: Instr, remaining_cycles: usize },
@@ -227,7 +234,7 @@ impl State {
 impl Display for State {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            State::Reset => write!(f, "reset"),
+            State::Reset(v) => write!(f, "reset {}", v),
             State::BeginInstr => write!(f, "pre_decode"),
             State::DecodedInstr(i) => write!(f, "decoded {}", i),
             State::ExecInstr { instr, remaining_cycles } => {
@@ -339,11 +346,22 @@ impl MOS6510 {
     ) -> Self {
         let mem = MemoryView::new(areas, ram);
         let reg = Regs::default();
-        MOS6510 { mem, reg, state: State::Reset, debugger, debugger_ui }
+        MOS6510 { mem, reg, state: State::Reset(ResetVec::RESET), debugger, debugger_ui }
     }
 
     pub fn cycle(&mut self, irq: Option<Interrupt>, nmi: Option<Interrupt>) {
-        // TODO Do something with irq and nmi
+        // handle the interrupt at the time it happens (even in the middle of executing an instruction)
+        if let (false, Some(_)) = (self.reg.p.contains(Flags::IRQD), irq) {
+            // println!("irq raised: {}", self.reg());
+            self.reg.sp -= 1;
+            self.mem.write_u16(self.reg.sp_abs(), self.reg.pc);
+            self.reg.sp -= 1;
+            self.mem.write(self.reg.sp_abs(), self.reg.p.bits());
+            self.reg.sp -= 1;
+
+            self.state = State::Reset(ResetVec::IRQ);
+        }
+        // TODO priorities, nmi
 
         let mut instrbuf = [0 as u8; 3];
         match self.state {
@@ -354,8 +372,9 @@ impl MOS6510 {
                 }
                 return;
             }
-            State::Reset => {
-                instrbuf = [0x6C, (RESET_VEC & 0xFF) as u8, (RESET_VEC >> 8) as u8];
+            State::Reset(vector) => {
+                let vector = vector as u16;
+                instrbuf = [0x6C, (vector & 0xFF) as u8, (vector >> 8) as u8];
                 self.state = State::BeginInstr;
                 // fallthrough
             }
@@ -822,27 +841,21 @@ impl MOS6510 {
                 args.reg.sp -= 1;
 
                 args.reg.p.set(Flags::BRK, true);
-                *args.next_pc = Some(args.mem.read_u16(0xFFFE));
+                *args.next_pc = Some(args.mem.read_u16(ResetVec::IRQ as u16));
             },
             // NOP 	No Operation
             Instr(NOP, Imp) => (),
             // RTI 	Return from Interrupt 	All
             Instr(RTI, Imp) => {
-                if cfg!(feature = "headless-chicken") {
-                    // TODO not sure if stack handling is correct, see this commit's message.
-                    // compare to JSR and RTS
-                    args.reg.sp += 1;
-                    args.reg.p = match Flags::from_bits(args.mem.read(args.reg.sp_abs())) {
-                        Some(f) => f,
-                        None => unimplemented!(), // TODO (behaviorwith unset bits?)
-                    };
-                    args.reg.sp += 1;
-                    *args.next_pc = Some(args.mem.read_u16(args.reg.sp_abs()));
-                    args.reg.sp += 1;
-                    // restore of p implicitly resets BRK
-                } else {
-                    unimplemented!();
-                }
+                args.reg.sp += 1;
+                args.reg.p = match Flags::from_bits(args.mem.read(args.reg.sp_abs())) {
+                    Some(f) => f,
+                    None => unimplemented!(), // TODO (behaviorwith unset bits?)
+                };
+                args.reg.sp += 1;
+                *args.next_pc = Some(args.mem.read_u16(args.reg.sp_abs()));
+                args.reg.sp += 1;
+                // restore of p implicitly resets BRK
             },
 
 
