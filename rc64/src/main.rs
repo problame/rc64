@@ -100,8 +100,6 @@ fn main() {
         let irq = cia1.borrow().cycle();
         let nmi = cia2.borrow().cycle();
 
-        // TODO Do something with irq and nmi
-
         let is_vic_cycle = cycles % 100_000 == 0;
 
         if is_vic_cycle {
@@ -113,7 +111,7 @@ fn main() {
             sigint_pending.store(false, std::sync::atomic::Ordering::SeqCst);
             debugger.borrow_mut().break_after_next_decode();
         }
-        mpu.cycle();
+        mpu.cycle(irq, nmi);
 
         if let Some(r) = loop_helper.report_rate() {
             println!("Mcycles / sec = {:.?}", r / 1_000.0);

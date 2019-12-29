@@ -1,6 +1,7 @@
 pub mod instr;
 mod mem;
 
+use crate::interrupt::Interrupt;
 use crate::ram::RAM;
 use crate::utils::R2C;
 pub use mem::*;
@@ -341,7 +342,9 @@ impl MOS6510 {
         MOS6510 { mem, reg, state: State::Reset, debugger, debugger_ui }
     }
 
-    pub fn cycle(&mut self) {
+    pub fn cycle(&mut self, irq: Option<Interrupt>, nmi: Option<Interrupt>) {
+        // TODO Do something with irq and nmi
+
         let mut instrbuf = [0 as u8; 3];
         match self.state {
             State::ExecInstr { ref mut remaining_cycles, .. } => {
