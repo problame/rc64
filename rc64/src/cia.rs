@@ -4,6 +4,7 @@ mod registers;
 
 use crate::interrupt::Interrupt;
 pub use backends::PeripheralDevicesBackend;
+use bit_vec::BitVec;
 
 use crate::mos6510;
 use crate::utils::R2C;
@@ -72,7 +73,10 @@ impl<T: 'static> CIA<T> {
         use CIAKind::*;
 
         let data_port = match kind {
-            Chip1 { peripherals } => r2c_new!(DataPortBackend::CIA1 { peripherals }),
+            Chip1 { peripherals } => r2c_new!(DataPortBackend::CIA1 {
+                peripherals,
+                keyboard_columns_queued_for_read: BitVec::from_elem(8, false)
+            }),
             Chip2 { vic } => r2c_new!(DataPortBackend::CIA2 {
                 vic,
                 serial_bus: SerialBusBackend {},

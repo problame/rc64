@@ -1,4 +1,7 @@
+use crate::cia::keyboard::MatrixIndex;
 use crate::utils::R2C;
+use bit_vec::BitVec;
+use std::iter;
 
 use super::backends::*;
 
@@ -67,8 +70,13 @@ impl<T> Register for DataA<T> {
     fn read(&self) -> u8 {
         unimpl!(0)
     }
-    fn write(&self, _val: u8) {
-        unimpl!()
+    fn write(&self, val: u8) {
+        match *self.0.borrow_mut() {
+            DataPortBackend::CIA1 { ref mut keyboard_columns_queued_for_read, .. } => {
+                *keyboard_columns_queued_for_read = BitVec::from_bytes(&[!val]);
+            }
+            DataPortBackend::CIA2 { .. } => unimpl!(),
+        }
     }
 }
 
@@ -128,7 +136,39 @@ impl<T> Register for DataDirectionA<T> {
 ///         Toggle or pulse data output for Timer B
 impl<T> Register for DataB<T> {
     fn read(&self) -> u8 {
-        unimpl!(0)
+        match &*self.0.borrow() {
+            DataPortBackend::CIA1 { peripherals, keyboard_columns_queued_for_read } => {
+                let keyboard_matrix = dbg!(peripherals.borrow().get_current_keyboard_matrix());
+                assert_eq!(keyboard_matrix.num_rows(), 8);
+
+                let mut selected_keys_pressed_in_rows =
+                    iter::repeat(()).take(keyboard_matrix.num_rows()).enumerate().map(|(row, _)| {
+                        keyboard_columns_queued_for_read
+                            .iter()
+                            .enumerate()
+                            .map(|(column, read_column)| {
+                                if read_column {
+                                    dbg!(keyboard_matrix[dbg!(MatrixIndex::rc(row as u8, column as u8))])
+                                } else {
+                                    false
+                                }
+                            })
+                            .fold(false, |acc, is_pressed| acc || is_pressed)
+                    });
+
+                let mut bitvec = BitVec::from_fn(keyboard_matrix.num_rows(), |_| {
+                    selected_keys_pressed_in_rows.next().expect(".num_rows() shouldn't change")
+                });
+
+                assert!(selected_keys_pressed_in_rows.next().is_none());
+                assert_eq!(bitvec.len(), 8);
+
+                bitvec.negate(); // 0 means pressed, 1 means none pressed
+
+                bitvec.to_bytes()[0]
+            }
+            DataPortBackend::CIA2 { .. } => unimpl!(0b1000_0000),
+        }
     }
     fn write(&self, _val: u8) {
         unimpl!()

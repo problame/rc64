@@ -2,6 +2,7 @@ use crate::cia::keyboard::KeyboardMatrix;
 use crate::interrupt::Interrupt;
 use crate::utils::R2C;
 use crate::vic20::VIC20;
+use bit_vec::BitVec;
 
 pub enum DataPortBackend<T> {
     /// Location Range: 56320-56321 ($DC00-$DC01)
@@ -161,7 +162,7 @@ pub enum DataPortBackend<T> {
     /// Register B it is 0 (all inputs).  This corresponds to the setting used when reading the keyboard
     /// (the keyboard column number is written to Data Port A, and the row number is then read in Data
     /// Port B).
-    CIA1 { peripherals: R2C<dyn PeripheralDevicesBackend> },
+    CIA1 { peripherals: R2C<dyn PeripheralDevicesBackend>, keyboard_columns_queued_for_read: BitVec },
 
     /// Location Range: 56576-56577 ($DD00-$DD01)
     /// CIA #2 Data Ports A and B

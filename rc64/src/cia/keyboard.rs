@@ -78,10 +78,19 @@ pub enum C64Key {
     F7,
 }
 
-#[derive(Clone, Copy)]
-struct MatrixIndex {
-    row: u8,
-    column: u8,
+pub(super) type Row = u8;
+pub(super) type Column = u8;
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct MatrixIndex {
+    row: Row,
+    column: Column,
+}
+
+impl MatrixIndex {
+    pub fn rc(row: Row, column: Column) -> Self {
+        MatrixIndex { row, column }
+    }
 }
 
 use C64Key::*;
@@ -164,6 +173,16 @@ lazy_static! {
 #[derive(Default)]
 pub struct KeyboardMatrix([[bool; 8]; 8]);
 
+impl KeyboardMatrix {
+    pub fn num_rows(&self) -> usize {
+        return self.0.len();
+    }
+
+    pub fn num_columns(&self) -> usize {
+        return self.0[0].len();
+    }
+}
+
 impl IndexMut<MatrixIndex> for KeyboardMatrix {
     fn index_mut(&mut self, idx: MatrixIndex) -> &mut Self::Output {
         &mut self.0[idx.row as usize][idx.column as usize]
@@ -205,7 +224,7 @@ where
     }
 }
 
-impl fmt::Display for KeyboardMatrix {
+impl fmt::Debug for KeyboardMatrix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         for row in self.0.iter() {
             for is_pressed in row {
