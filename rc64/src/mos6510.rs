@@ -833,6 +833,7 @@ impl MOS6510 {
 
             // BRK 	Force an interrupt 	B
             Instr(BRK, Imp) => {
+                unimplemented!();
                 args.reg.sp -= 1;
                 args.mem.write_u16(args.reg.sp_abs(), args.reg.pc);
                 args.reg.sp -= 1;
