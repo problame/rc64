@@ -731,7 +731,7 @@ impl MOS6510 {
                 args.reg.set_nzc_flags(v, carry);
             },
             // LSR 	Logical Shift Right 	N,Z,C
-            Instr(LSR, Acc) => {
+            Instr(LSR, Imp) => {
                 let (carry, v) = MOS6510::lsr(args.reg.a);
                 args.reg.lda(v);
                 args.reg.set_nzc_flags(v, carry);
