@@ -337,6 +337,48 @@ pub trait DebuggerUI {
     );
 }
 
+/// Shared functions of MOS6510 and InstrMatchArgs
+trait StackHelper {
+    fn mem(&mut self) -> &mut MemoryView;
+    fn reg(&mut self) -> &mut Regs;
+
+    fn push(&mut self, val: u8) {
+        let sp = self.reg().sp_abs();
+        self.mem().write(sp, val);
+        self.reg().sp -= 1;
+    }
+
+    fn push_u16(&mut self, val: u16) {
+        self.reg().sp -= 1;
+        let sp = self.reg().sp_abs();
+        self.mem().write_u16(sp, val);
+        self.reg().sp -= 1;
+    }
+
+    fn pull(&mut self) -> u8 {
+        self.reg().sp += 1;
+        let sp = self.reg().sp_abs();
+        self.mem().read(sp)
+    }
+
+    fn pull_u16(&mut self) -> u16 {
+        self.reg().sp += 1;
+        let sp = self.reg().sp_abs();
+        let val = self.mem().read_u16(sp);
+        self.reg().sp += 1;
+        val
+    }
+}
+
+impl StackHelper for MOS6510 {
+    fn mem(&mut self) -> &mut MemoryView {
+        &mut self.mem
+    }
+    fn reg(&mut self) -> &mut Regs {
+        &mut self.reg
+    }
+}
+
 impl MOS6510 {
     pub fn new(
         areas: Areas,
@@ -353,11 +395,8 @@ impl MOS6510 {
         // handle the interrupt at the time it happens (even in the middle of executing an instruction)
         if let (false, Some(_)) = (self.reg.p.contains(Flags::IRQD), irq) {
             // println!("irq raised: {}", self.reg());
-            self.reg.sp -= 1;
-            self.mem.write_u16(self.reg.sp_abs(), self.reg.pc);
-            self.reg.sp -= 1;
-            self.mem.write(self.reg.sp_abs(), self.reg.p.bits());
-            self.reg.sp -= 1;
+            self.push_u16(self.reg.pc);
+            self.push(self.reg.p.bits());
 
             self.state = State::Reset(ResetVec::IRQ);
         }
@@ -388,7 +427,7 @@ impl MOS6510 {
             Err(e) => panic!(
                 "instruction decode error: {:?}\nregs: {}\nstack:\n\t{}",
                 e,
-                self.reg(),
+                self.reg,
                 self.dump_stack_lines(true).join("\n\t")
             ),
             Ok((instr, len)) => (instr, len),
@@ -544,6 +583,15 @@ impl MOS6510 {
             next_pc: &'a mut Option<u16>,
         }
 
+        impl<'a> StackHelper for InstrMatchArgs<'a> {
+            fn mem(&mut self) -> &mut MemoryView {
+                &mut self.mem
+            }
+            fn reg(&mut self) -> &mut Regs {
+                &mut self.reg
+            }
+        }
+
         // call to the macro-transformed fn instr_match below
         instr_match(InstrMatchArgs {
             instr,
@@ -570,7 +618,7 @@ impl MOS6510 {
         }
 
         #[gen_instr_match]
-        fn instr_match(args: InstrMatchArgs) {
+        fn instr_match(mut args: InstrMatchArgs) {
             match args.instr {
             // Sources http://www.obelisk.me.uk/6502/instructions.html
             //         https://www.masswerk.at/6502/6502_instruction_set.html
@@ -621,23 +669,20 @@ impl MOS6510 {
             Instr(TXS, Imp) => args.reg.sp = args.reg.x,
             // PHA 	Push accumulator on stack
             Instr(PHA, Imp) => {
-                args.mem.write(args.reg.sp_abs(), args.reg.a);
-                args.reg.sp = args.reg.sp.overflowing_sub(1).0; // TODO instrument overflow
+                args.push(args.reg.a)
             },
             // PHP 	Push processor status on stack
             Instr(PHP, Imp) => {
-                args.mem.write(args.reg.sp_abs(), args.reg.p.bits());
-                args.reg.sp = args.reg.sp.overflowing_sub(1).0; // TODO instrument overflow
+                args.push(args.reg.p.bits())
             },
             // PLA 	Pull accumulator from stack 	N,Z
             Instr(PLA, Imp) => {
-                args.reg.sp = args.reg.sp.overflowing_add(1).0; // TODO instrument overflow
-                args.reg.lda(args.mem.read(args.reg.sp_abs()));
+                let acc = args.pull();
+                args.reg.lda(acc)
             }
             // PLP 	Pull processor status from stack 	All
             Instr(PLP, Imp) => {
-                args.reg.sp = args.reg.sp.overflowing_add(1).0; // TODO instrument overflow
-                match Flags::from_bits(args.mem.read(args.reg.sp_abs())) {
+                match Flags::from_bits(args.pull()) {
                     Some(p) => args.reg.p = p,
                     None => unimplemented!(), // TODO processor behavior if unused bit is set?
                 }
@@ -776,16 +821,12 @@ impl MOS6510 {
             Instr(JMP, Abs(a)) => *args.next_pc = Some(a),
             // JSR 	Jump to a subroutine
             Instr(JSR, Abs(a)) => {
-                args.reg.sp -= 1; // TODO stack overflow instrumentation
-                args.mem.write_u16(args.reg.sp_abs(), args.next_pc.unwrap() - 1);
-                args.reg.sp -= 1; // TODO stack overflow instrumentation
+                args.push_u16(args.next_pc.unwrap() - 1);
                 *args.next_pc = Some(a);
             }
             // RTS 	Return from subroutine
             Instr(RTS, Imp) => {
-                args.reg.sp += 1;
-                *args.next_pc = Some(args.mem.read_u16(args.reg.sp_abs()).overflowing_add(1).0);
-                args.reg.sp += 1;
+                *args.next_pc = Some(args.pull_u16().overflowing_add(1).0);
             }
 
             /***************** Branches ******************/
@@ -834,12 +875,8 @@ impl MOS6510 {
             // BRK 	Force an interrupt 	B
             Instr(BRK, Imp) => {
                 unimplemented!();
-                args.reg.sp -= 1;
-                args.mem.write_u16(args.reg.sp_abs(), args.reg.pc);
-                args.reg.sp -= 1;
-
-                args.mem.write(args.reg.sp_abs(), args.reg.p.bits());
-                args.reg.sp -= 1;
+                args.push_u16(args.reg.pc);
+                args.push(args.reg.p.bits());
 
                 args.reg.p.set(Flags::BRK, true);
                 *args.next_pc = Some(args.mem.read_u16(ResetVec::IRQ as u16));
@@ -848,14 +885,11 @@ impl MOS6510 {
             Instr(NOP, Imp) => (),
             // RTI 	Return from Interrupt 	All
             Instr(RTI, Imp) => {
-                args.reg.sp += 1;
-                args.reg.p = match Flags::from_bits(args.mem.read(args.reg.sp_abs())) {
+                args.reg.p = match Flags::from_bits(args.pull()) {
                     Some(f) => f,
                     None => unimplemented!(), // TODO (behaviorwith unset bits?)
                 };
-                args.reg.sp += 1;
-                *args.next_pc = Some(args.mem.read_u16(args.reg.sp_abs()));
-                args.reg.sp += 1;
+                *args.next_pc = Some(args.pull_u16());
                 // restore of p implicitly resets BRK
             },
 
