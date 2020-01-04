@@ -571,7 +571,7 @@ impl MOS6510 {
     #[inline]
     fn rol(v: u8, carry: bool) -> (bool, u8) {
         let res = (v as u16) << 1;
-        (res & 0x100 != 0, ((res & 0xff) as u8) & (carry as u8))
+        (res & 0x100 != 0, ((res & 0xff) as u8) | (carry as u8))
     }
 
     #[inline]
