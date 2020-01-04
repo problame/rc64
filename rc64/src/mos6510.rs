@@ -481,9 +481,11 @@ impl MOS6510 {
                 State::CheckInterrupts{interrupts} => {
                     let mut interrupts = interrupts;
                     if let Some(reset_vec) = interrupts.ack_highest_prio() {
+                        // https://www.c64-wiki.de/wiki/IRQ
                         // println!("irq raised: {}", self.reg());
                         self.push_u16(self.reg.pc);
                         self.push(self.reg.p.bits());
+                        self.reg.p.set(Flags::IRQD, true);
                         self.state = State::InjectResetVecJmp{interrupts, reset_vec};
                     } else {
                         self.state = State::Fetch { interrupts }
