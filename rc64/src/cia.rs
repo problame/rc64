@@ -73,10 +73,7 @@ impl<T: 'static> CIA<T> {
         use CIAKind::*;
 
         let data_port = match kind {
-            Chip1 { peripherals } => r2c_new!(DataPortBackend::CIA1 {
-                peripherals,
-                keyboard_columns_queued_for_read: BitVec::from_elem(8, false)
-            }),
+            Chip1 { peripherals } => r2c_new!(DataPortBackend::CIA1 { peripherals, last_data_a_write: 0 }),
             Chip2 { vic } => r2c_new!(DataPortBackend::CIA2 {
                 vic,
                 serial_bus: SerialBusBackend {},

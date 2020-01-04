@@ -95,7 +95,7 @@ impl MatrixIndex {
 
 use C64Key::*;
 lazy_static! {
-    static ref VIDEO_MATRIX_POS: EnumMap<C64Key, MatrixIndex> = enum_map! {
+    static ref KEYBOARD_MATRIX_MAP: EnumMap<C64Key, MatrixIndex> = enum_map! {
         Stop        => MatrixIndex { row: 7, column: 7 },
         Q           => MatrixIndex { row: 6, column: 7 },
         Commodore   => MatrixIndex { row: 5, column: 7 },
@@ -170,16 +170,30 @@ lazy_static! {
     };
 }
 
+/// https://www.c64-wiki.com/wiki/Keyboard#Keyboard_Matrix
+/// CATCH1: row major, i.e. 8 rows with 8 columns each, i.e. `matrix[row_idx][col_idx]`
+/// CATCH2: idx=0 is rightmost / bottommost in the table on the website
 #[derive(Default)]
-pub struct KeyboardMatrix([[bool; 8]; 8]);
+pub struct KeyboardMatrix([[bool; KeyboardMatrix::NUM_COLS]; KeyboardMatrix::NUM_ROWS]);
 
 impl KeyboardMatrix {
-    pub fn num_rows(&self) -> usize {
-        return self.0.len();
+    const NUM_ROWS: usize = 8;
+    const NUM_COLS: usize = 8;
+    pub const fn num_rows(&self) -> u8 {
+        Self::NUM_ROWS as u8
     }
-
-    pub fn num_columns(&self) -> usize {
-        return self.0[0].len();
+    pub const fn num_cols(&self) -> u8 {
+        Self::NUM_COLS as u8
+    }
+    pub fn empty(&self) -> bool {
+        for row in self.0.iter() {
+            for cell in row {
+                if *cell {
+                    return false;
+                }
+            }
+        }
+        true
     }
 }
 
@@ -198,14 +212,14 @@ impl Index<MatrixIndex> for KeyboardMatrix {
 
 impl IndexMut<C64Key> for KeyboardMatrix {
     fn index_mut(&mut self, key: C64Key) -> &mut Self::Output {
-        self.index_mut(VIDEO_MATRIX_POS[key])
+        self.index_mut(KEYBOARD_MATRIX_MAP[key])
     }
 }
 
 impl Index<C64Key> for KeyboardMatrix {
     type Output = bool;
     fn index(&self, key: C64Key) -> &Self::Output {
-        self.index(VIDEO_MATRIX_POS[key])
+        self.index(KEYBOARD_MATRIX_MAP[key])
     }
 }
 
@@ -217,7 +231,7 @@ where
         let mut matrix = KeyboardMatrix::default();
 
         for key in pressed_keys {
-            matrix[VIDEO_MATRIX_POS[key]] = true;
+            matrix[KEYBOARD_MATRIX_MAP[key]] = true;
         }
 
         matrix
@@ -226,7 +240,10 @@ where
 
 impl fmt::Debug for KeyboardMatrix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for row in self.0.iter() {
+        write!(f, "  01234567\n");
+        write!(f, "  --------\n");
+        for (row_idx, row) in self.0.iter().enumerate() {
+            write!(f, "{}|", row_idx);
             for is_pressed in row {
                 write!(f, "{}", *is_pressed as u8)?;
             }

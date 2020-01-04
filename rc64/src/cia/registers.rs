@@ -1,4 +1,4 @@
-use crate::cia::keyboard::MatrixIndex;
+use crate::cia::keyboard::{KeyboardMatrix, MatrixIndex};
 use crate::utils::R2C;
 use bit_vec::BitVec;
 use std::iter;
@@ -73,8 +73,8 @@ impl<T> Register for DataA<T> {
     }
     fn write(&self, val: u8) {
         match *self.0.borrow_mut() {
-            DataPortBackend::CIA1 { ref mut keyboard_columns_queued_for_read, .. } => {
-                *keyboard_columns_queued_for_read = BitVec::from_bytes(&[!val]);
+            DataPortBackend::CIA1 { ref mut last_data_a_write, .. } => {
+                *last_data_a_write = val;
             }
             DataPortBackend::CIA2 { .. } => unimpl!(),
         }
@@ -138,35 +138,35 @@ impl<T> Register for DataDirectionA<T> {
 impl<T> Register for DataB<T> {
     fn read(&self) -> u8 {
         match &*self.0.borrow() {
-            DataPortBackend::CIA1 { peripherals, keyboard_columns_queued_for_read } => {
-                let keyboard_matrix = peripherals.borrow().get_current_keyboard_matrix();
+            DataPortBackend::CIA1 { peripherals, last_data_a_write } => {
+                let keyboard_matrix: KeyboardMatrix = peripherals.borrow().get_current_keyboard_matrix();
+
+                // if !keyboard_matrix.empty() {
+                //     println!("keyboard_matrix=\n{:?}", keyboard_matrix);
+                // }
+
+                // last_data_a_write selected a set of columns
+                // reading B returns one byte,
+                // each bit i representing whether the key (i,c) is pressed in any c \elem columns
+
                 assert_eq!(keyboard_matrix.num_rows(), 8);
+                assert_eq!(keyboard_matrix.num_cols(), 8);
+                let mut out: u8 = 0;
+                for row_bitpos in 0..8 {
+                    for col_bitpos in 0..8 {
+                        let key_pressed = keyboard_matrix[MatrixIndex::rc(row_bitpos, col_bitpos)];
+                        let col_requested = (last_data_a_write & (1 << col_bitpos)) == 0; // unset bit means requested
+                        out |= ((col_requested && key_pressed) as u8) << row_bitpos;
+                    }
+                }
 
-                let mut selected_keys_pressed_in_rows =
-                    iter::repeat(()).take(keyboard_matrix.num_rows()).enumerate().map(|(row, _)| {
-                        keyboard_columns_queued_for_read
-                            .iter()
-                            .enumerate()
-                            .map(|(column, read_column)| {
-                                if read_column {
-                                    keyboard_matrix[MatrixIndex::rc(row as u8, column as u8)]
-                                } else {
-                                    false
-                                }
-                            })
-                            .fold(false, |acc, is_pressed| acc || is_pressed)
-                    });
+                out = !out; // 0 means pressed, 1 means none pressed
 
-                let mut bitvec = BitVec::from_fn(keyboard_matrix.num_rows(), |_| {
-                    selected_keys_pressed_in_rows.next().expect(".num_rows() shouldn't change")
-                });
+                // if !keyboard_matrix.empty() {
+                //     println!("req={:b} out={:b}", last_data_a_write, out);
+                // }
 
-                assert!(selected_keys_pressed_in_rows.next().is_none());
-                assert_eq!(bitvec.len(), 8);
-
-                bitvec.negate(); // 0 means pressed, 1 means none pressed
-
-                bitvec.to_bytes()[0]
+                out
             }
             DataPortBackend::CIA2 { .. } => unimpl!(0b1000_0000),
         }
