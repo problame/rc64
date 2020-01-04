@@ -214,19 +214,63 @@ impl Regs {
 
 use instr::*;
 
+#[derive(Eq, PartialEq, Debug, Clone, Copy, Default)]
+pub struct InterruptPending {
+    pub irq: bool,
+    pub nmi: bool,
+}
+
+impl Display for InterruptPending {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let InterruptPending { irq, nmi } = self;
+        write!(f, "irq={:?} nmi={:?}", irq, nmi)
+    }
+}
+
+impl InterruptPending {
+    fn update_merge(&mut self, update: &InterruptPending) {
+        self.irq |= update.irq;
+        self.nmi |= update.nmi;
+    }
+    fn ack_highest_prio(&mut self) -> Option<ResetVec> {
+        if self.nmi {
+            self.nmi = false;
+            self.irq = false;
+            return Some(ResetVec::NMI);
+        } else if self.irq {
+            self.irq = false;
+            return Some(ResetVec::IRQ);
+        }
+        None
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum State {
-    Reset(ResetVec),
-    BeginInstr,
-    DecodedInstr(Instr),
-    ExecInstr { instr: Instr, remaining_cycles: usize },
+    CheckInterrupts { interrupts: InterruptPending },
+    InjectResetVecJmp { interrupts: InterruptPending, reset_vec: ResetVec },
+    Fetch { interrupts: InterruptPending },
+    Decode { interrupts: InterruptPending },
+    DecodedInstr { interrupts: InterruptPending, next_instr: Instr },
+    ExecInstr { instr: Instr, remaining_cycles: usize, interrupts: InterruptPending },
 }
 
 impl State {
     pub fn decoded_instr(&self) -> Option<&Instr> {
         match self {
-            State::DecodedInstr(i) => Some(i),
+            State::DecodedInstr { next_instr, .. } => Some(next_instr),
             _ => None,
+        }
+    }
+    pub fn interrupts(&mut self) -> &mut InterruptPending {
+        use State::*;
+        match self {
+            CheckInterrupts { interrupts } => interrupts,
+            InjectResetVecJmp { interrupts, .. } => interrupts,
+            Fetch { interrupts, .. } => interrupts,
+            Decode { interrupts, .. } => interrupts,
+            ExecInstr { interrupts, .. } => interrupts,
+            DecodedInstr { interrupts, .. } => interrupts,
         }
     }
 }
@@ -234,11 +278,17 @@ impl State {
 impl Display for State {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            State::Reset(v) => write!(f, "reset {}", v),
-            State::BeginInstr => write!(f, "pre_decode"),
-            State::DecodedInstr(i) => write!(f, "decoded {}", i),
-            State::ExecInstr { instr, remaining_cycles } => {
-                write!(f, "exec[{} cycles left] {}", remaining_cycles, instr)
+            State::CheckInterrupts { interrupts } => write!(f, "check_irqs irqs={{{}}}", interrupts),
+            State::InjectResetVecJmp { interrupts, reset_vec } => {
+                write!(f, "inject_reset_vec_jmp {}, irqs={{{}}}", reset_vec, interrupts)
+            }
+            State::Fetch { interrupts } => write!(f, "fetch irqs={{{}}}", interrupts),
+            State::Decode { interrupts } => write!(f, "decode irqs={{{}}}", interrupts),
+            State::DecodedInstr { interrupts, next_instr } => {
+                write!(f, "decoded {}, irqs={{{}}}", next_instr, interrupts)
+            }
+            State::ExecInstr { instr, remaining_cycles, interrupts } => {
+                write!(f, "exec[{} cycles left] {} irqs={{{}}}", remaining_cycles, instr, interrupts)
             }
         }
     }
@@ -388,39 +438,66 @@ impl MOS6510 {
     ) -> Self {
         let mem = MemoryView::new(areas, ram);
         let reg = Regs::default();
-        MOS6510 { mem, reg, state: State::Reset(ResetVec::RESET), debugger, debugger_ui }
+        MOS6510 {
+            mem,
+            reg,
+            state: State::InjectResetVecJmp {
+                interrupts: InterruptPending::default(),
+                reset_vec: ResetVec::RESET,
+            },
+            debugger,
+            debugger_ui,
+        }
     }
 
     pub fn cycle(&mut self, irq: Option<Interrupt>, nmi: Option<Interrupt>) {
         // handle the interrupt at the time it happens (even in the middle of executing an instruction)
-        if let (false, Some(_)) = (self.reg.p.contains(Flags::IRQD), irq) {
-            // println!("irq raised: {}", self.reg());
-            self.push_u16(self.reg.pc);
-            self.push(self.reg.p.bits());
-
-            self.state = State::Reset(ResetVec::IRQ);
+        let cycle_interrupt_pending = {
+            let mut ip = InterruptPending::default();
+            ip.irq = !self.reg.p.contains(Flags::IRQD) && irq.is_some();
+            ip.nmi = nmi.is_some();
+            ip
+        };
+        if cycle_interrupt_pending.nmi {
+            unimplemented!()
         }
-        // TODO priorities, nmi
+        self.state.interrupts().update_merge(&cycle_interrupt_pending);
 
         let mut instrbuf = [0 as u8; 3];
-        match self.state {
-            State::ExecInstr { ref mut remaining_cycles, .. } => {
-                *remaining_cycles = remaining_cycles.saturating_sub(1);
-                if *remaining_cycles == 0 {
-                    self.state = State::BeginInstr;
+        loop {
+            match self.state {
+                State::ExecInstr { ref mut remaining_cycles, ref mut interrupts, ..} => {
+                    *remaining_cycles = remaining_cycles.saturating_sub(1);
+                    if *remaining_cycles == 0 {
+                        self.state = State::CheckInterrupts{interrupts: *interrupts};
+                    }
+                    return;
                 }
-                return;
+                State::InjectResetVecJmp{interrupts, reset_vec} => {
+                    let vector = reset_vec as u16;
+                    instrbuf = [0x6C, (vector & 0xFF) as u8, (vector >> 8) as u8];
+                    self.state = State::Decode{interrupts};
+                }
+                State::CheckInterrupts{interrupts} => {
+                    let mut interrupts = interrupts;
+                    if let Some(reset_vec) = interrupts.ack_highest_prio() {
+                        // println!("irq raised: {}", self.reg());
+                        self.push_u16(self.reg.pc);
+                        self.push(self.reg.p.bits());
+                        self.state = State::InjectResetVecJmp{interrupts, reset_vec};
+                    } else {
+                        self.state = State::Fetch { interrupts }
+                    }
+                }
+                State::Fetch{interrupts} => {
+                    self.mem.read_one_to_three(self.reg.pc, &mut instrbuf[..]);
+                    self.state = State::Decode { interrupts }
+                }
+                State::Decode{..} => {
+                    break;
+                }
+                State::DecodedInstr{..} => panic!("unreachable: DecodedInstr is intermediate intra-cycle state between BeginInstr and ExecInstr"),
             }
-            State::Reset(vector) => {
-                let vector = vector as u16;
-                instrbuf = [0x6C, (vector & 0xFF) as u8, (vector >> 8) as u8];
-                self.state = State::BeginInstr;
-                // fallthrough
-            }
-            State::BeginInstr => {
-                self.mem.read_one_to_three(self.reg.pc, &mut instrbuf[..]);
-            }
-            State::DecodedInstr(_) => panic!("unreachable: DecodedInstr is intermediate intra-cycle state between BeginInstr and ExecInstr"),
         }
 
         let (next_instr, len) = match instr::decode_instr(&instrbuf[..]) {
@@ -432,7 +509,7 @@ impl MOS6510 {
             ),
             Ok((instr, len)) => (instr, len),
         };
-        self.state = State::DecodedInstr(next_instr);
+        self.state = State::DecodedInstr { next_instr, interrupts: *self.state.interrupts() };
 
         // debugger callback
         let action = self.debugger.borrow_mut().post_decode_pre_apply_cb(&self);
@@ -572,7 +649,11 @@ impl MOS6510 {
         let effective_addr_load = effective_addr.map(|a| self.mem.read(a.effective));
 
         //debug_assert_eq!(self.state, State::BeginInstr);
-        self.state = State::ExecInstr { remaining_cycles: instr.cycles(effective_addr), instr };
+        self.state = State::ExecInstr {
+            remaining_cycles: instr.cycles(effective_addr),
+            instr,
+            interrupts: *self.state.interrupts(),
+        };
 
         struct InstrMatchArgs<'a> {
             instr: Instr,
