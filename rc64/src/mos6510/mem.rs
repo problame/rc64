@@ -123,7 +123,6 @@ impl Default for BankingState {
 
 impl BankingState {
     pub fn update(&mut self, update: BankingStateUpdate) {
-        println!("BANKING UPDATE {:?}", update);
         match update {
             BankingStateUpdate::CpuControlLines(value) => {
                 self.cpu_control_lines = value;
@@ -141,7 +140,6 @@ impl BankingState {
         self.banking.clear();
 
         let bitmap = BitVec::from_bytes(&[self.expansion_port, self.cpu_control_lines]);
-        println!("BITMAP = {:?}", bitmap);
         #[allow(clippy::identity_op)]
         let loram = bitmap.get(15 - 0).unwrap();
         let hiram = bitmap.get(15 - 1).unwrap();
@@ -230,8 +228,6 @@ impl BankingState {
             0 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
             _ => assert!(combined < 32, "{}", combined),
         }
-
-        println!("segs = {:?}", self.banking);
 
         debug_assert!(
             {
