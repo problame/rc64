@@ -122,6 +122,25 @@ impl Instr {
     pub fn addr(self) -> Addr {
         self.1
     }
+    pub fn len(self) -> u8 {
+        use Addr::*;
+        1 + match self.addr() {
+            Imp => 0,
+            Acc => 0,
+            Imm(x) | Zpi(x) | ZpX(x) | ZpY(x) | IzX(x) | IzY(x) => {
+                let _: u8 = x;
+                1
+            } // LDX, STX
+            PCr(x) => {
+                let _: i8 = x;
+                1
+            }
+            Abs(x) | AbX(x) | AbY(x) | Ind(x) => {
+                let _: u16 = x;
+                2
+            }
+        }
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -249,6 +268,8 @@ pub fn decode_instr(peek: &[u8]) -> Result<(Instr, u8), DecodeErr> {
     CLV => { Imp=0xB8,            };
     NOP => { Imp=0xEA,            };
         };
+
+    assert_eq!(i.len(), len, "\n{:?}", peek);
 
     Ok((i, len))
 }

@@ -14,7 +14,7 @@ impl Default for DebuggerCli {
 }
 
 impl DebuggerCli {
-    fn do_loop(&mut self, mos: &mos6510::MOS6510) {
+    fn do_loop(&mut self, mos: &mos6510::MOS6510) -> Option<mos6510::DebuggerMOSMutation> {
         let mut is_first_iteration = true;
 
         loop {
@@ -41,28 +41,30 @@ impl DebuggerCli {
             match line.as_str() {
                 "h" | "help" => println!(
                     r#"commands:
-h | help            show this help menu
-c                   continue
-b                   show pc & ea breakpoints (hex-encoded)
-b pc|ea HEXADDR     add pc/ea breakpoint add hex-encoded addr
-d pc|ea HEXADDR     del pc/ea breakpoint add hex-encoded addr
-info                MOS dump
-stack sp            dump stack from sp upward
-stack all           dump entire stack page
-instrlog on|off     enable instruciton logging to console
-brk on|off          trap to debugger on BRK instr (doesn't affect handling of BRK)
-readmem HEXADDR     read memory at address
+h | help                show this help menu
+c                       continue
+b                       show pc & ea breakpoints (hex-encoded)
+b pc|ea HEXADDR         add pc/ea breakpoint add hex-encoded addr
+d pc|ea HEXADDR         del pc/ea breakpoint add hex-encoded addr
+info                    MOS dump
+stack sp                dump stack from sp upward
+stack all               dump entire stack page
+instrlog on|off         enable instruciton logging to console
+brk on|off              trap to debugger on BRK instr (doesn't affect handling of BRK)
+readmem HEXADDR         read memory at address
+inject HEX [HEX [HEX]]  inject raw instruction on next fetch cycle
+exec   HEX [HEX [HEX]]  exe raw instruction now
                     "#
                 ),
                 "c" => {
-                    return;
+                    return None;
                 }
                 "exit" => {
                     std::process::exit(1); // FIXME: should report this back as a result
                 }
                 "s" => {
                     mos.debugger_refmut().break_after_next_decode();
-                    return;
+                    return None;
                 }
                 x if x.starts_with("stack ") => {
                     let from_sp_upward = match x {
@@ -160,6 +162,44 @@ readmem HEXADDR     read memory at address
                     let val = mos.mem().read(addr);
                     println!("0x{:04x} = {:02x}", addr, val);
                 }
+                x if x.starts_with("inject ") || x.starts_with("exec ") => {
+                    let rem = x.split(" ").collect::<Vec<_>>();
+                    if rem.len() < 2 {
+                        println!("at least the opcode, please!");
+                        continue;
+                    }
+                    if rem.len() > 4 {
+                        println!("at most 3 bytes");
+                        continue;
+                    }
+                    let bytes: Result<Vec<u8>, _> =
+                        rem.iter().skip(1).map(|byte| u8::from_str_radix(byte, 16)).collect();
+                    let mut bytes = match bytes {
+                        Ok(b) => b,
+                        Err(e) => {
+                            println!("at least one byte not hex: {:?}", e);
+                            continue;
+                        }
+                    };
+                    let prepadlen = bytes.len();
+                    let padding = vec![0; 3 - bytes.len()];
+                    bytes.extend(padding);
+                    let (instr, len) = match mos6510::instr::decode_instr(&bytes[..]) {
+                        Ok((i, l)) => (i, l),
+                        Err(e) => {
+                            println!("instruction decode error {:?}", e);
+                            continue;
+                        }
+                    };
+                    assert_eq!(len, prepadlen as u8);
+                    println!("injecting instruction {:?}", instr);
+                    let mutation = match rem[0] {
+                        "inject" => mos6510::DebuggerMOSMutation::InjectInstr(instr),
+                        "exec" => mos6510::DebuggerMOSMutation::ExecInstr(instr),
+                        x => unreachable!("{:?}", x),
+                    };
+                    return Some(mutation);
+                }
                 x => {
                     println!("unknown command: {:?}", x);
                     continue;
@@ -174,8 +214,8 @@ impl mos6510::DebuggerUI for DebuggerCli {
         &mut self,
         action: mos6510::DebuggerPostDecodePreApplyCbAction,
         mos: &mos6510::MOS6510,
-    ) {
+    ) -> Option<mos6510::DebuggerMOSMutation> {
         assert_eq!(action, mos6510::DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt);
-        self.do_loop(mos);
+        self.do_loop(mos)
     }
 }

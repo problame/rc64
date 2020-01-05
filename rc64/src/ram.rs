@@ -8,10 +8,12 @@ impl Default for RAM {
 }
 
 impl RAM {
+    #[inline]
     pub fn read(&self, addr: u16) -> u8 {
         self.content[addr as usize]
     }
 
+    #[inline]
     pub fn write(&mut self, addr: u16, val: u8) {
         self.content[addr as usize] = val
     }

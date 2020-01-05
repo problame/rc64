@@ -16,15 +16,17 @@ mod vic20;
 mod backend {
     pub(super) mod fb_minifb;
 }
+mod autoload;
 mod debugger_cli;
 
 use crate::cia::{CIAKind, CIA};
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::utils::R2C;
-use std::sync::Arc;
 
+use std::convert::TryFrom;
 use std::path::PathBuf;
+use std::sync::Arc;
 use structopt::StructOpt;
 
 struct UnimplMemoryArea;
@@ -41,6 +43,12 @@ impl mos6510::MemoryArea for UnimplMemoryArea {
 struct Args {
     #[structopt(long, help = "use custom kernal image")]
     kernal: Option<PathBuf>,
+
+    #[structopt(long, help = "trap to debugger after first instr")]
+    trap_init: bool,
+
+    #[structopt(help = "autostart prg file")]
+    prg: Option<PathBuf>,
 }
 
 fn main() {
@@ -85,7 +93,9 @@ fn main() {
     };
 
     let debugger = r2c_new!(mos6510::Debugger::default());
-    debugger.borrow_mut().add_pc_breakpoint(0);
+    if args.trap_init {
+        debugger.borrow_mut().add_pc_breakpoint(0);
+    }
     let debugger_cli = r2c_new!(debugger_cli::DebuggerCli::default());
 
     let sigint_pending = Arc::new(std::sync::atomic::AtomicBool::default());
@@ -98,6 +108,12 @@ fn main() {
     use spin_sleep::LoopHelper;
 
     let mut loop_helper = LoopHelper::builder().report_interval_s(1.0).build_with_target_rate(1_000.0f64); // scale by 1000
+
+    let mut autoload_state = args
+        .prg
+        .map(|path| std::fs::read(path).expect("read PRG"))
+        .map(|bytes| autoload::PRG::try_from(bytes).expect("parse PRG"))
+        .map(|prg| autoload::AutloadState::new(prg, ram.clone()));
 
     let mut cycles = 0;
     loop {
@@ -114,6 +130,10 @@ fn main() {
 
         if is_vic_cycle {
             vic20.borrow_mut().cycle();
+        }
+
+        if let Some(autoload_state) = &mut autoload_state {
+            autoload_state.cycle();
         }
 
         if sigint_pending.load(std::sync::atomic::Ordering::SeqCst) {

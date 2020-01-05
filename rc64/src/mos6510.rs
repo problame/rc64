@@ -12,6 +12,7 @@ use std::rc::Rc;
 use rc64_macros::gen_instr_match;
 
 pub struct MOS6510 {
+    ram: R2C<RAM>,
     mem: MemoryView,
     reg: Regs,
     state: State,
@@ -214,34 +215,51 @@ impl Regs {
 
 use instr::*;
 
-#[derive(Eq, PartialEq, Debug, Clone, Copy, Default)]
+#[derive(Eq, PartialEq, Debug, Copy, Clone, Default)]
 pub struct InterruptPending {
+    // in order of priority
+    pub inject_instr: Option<Instr>,
     pub irq: bool,
     pub nmi: bool,
 }
 
 impl Display for InterruptPending {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let InterruptPending { irq, nmi } = self;
-        write!(f, "irq={:?} nmi={:?}", irq, nmi)
+        let InterruptPending { irq, nmi, inject_instr } = self;
+        write!(f, "irq={:?} nmi={:?} inject_instr={:?}", irq, nmi, inject_instr)
     }
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum InterruptAckResult {
+    None,
+    ResetVec(ResetVec),
+    InjectInstr(Instr),
 }
 
 impl InterruptPending {
     fn update_merge(&mut self, update: &InterruptPending) {
+        if let Some(v) = update.inject_instr {
+            self.inject_instr = Some(v);
+        }
         self.irq |= update.irq;
         self.nmi |= update.nmi;
     }
-    fn ack_highest_prio(&mut self) -> Option<ResetVec> {
+    fn ack_highest_prio(&mut self) -> InterruptAckResult {
         if self.nmi {
             self.nmi = false;
             self.irq = false;
-            return Some(ResetVec::NMI);
+            return InterruptAckResult::ResetVec(ResetVec::NMI);
         } else if self.irq {
             self.irq = false;
-            return Some(ResetVec::IRQ);
+            return InterruptAckResult::ResetVec(ResetVec::IRQ);
+        } else {
+            return self
+                .inject_instr
+                .map(|i| InterruptAckResult::InjectInstr(i))
+                .take()
+                .unwrap_or(InterruptAckResult::None);
         }
-        None
     }
 }
 
@@ -379,12 +397,17 @@ impl Debugger {
     }
 }
 
+pub enum DebuggerMOSMutation {
+    InjectInstr(Instr),
+    ExecInstr(Instr),
+}
+
 pub trait DebuggerUI {
     fn handle_post_decode_pre_apply_action(
         &mut self,
         action: DebuggerPostDecodePreApplyCbAction,
         mos: &MOS6510,
-    );
+    ) -> Option<DebuggerMOSMutation>;
 }
 
 /// Shared functions of MOS6510 and InstrMatchArgs
@@ -436,10 +459,11 @@ impl MOS6510 {
         debugger: R2C<Debugger>,
         debugger_ui: R2C<dyn DebuggerUI>,
     ) -> Self {
-        let mem = MemoryView::new(areas, ram);
+        let mem = MemoryView::new(areas, ram.clone());
         let reg = Regs::default();
         MOS6510 {
             mem,
+            ram,
             reg,
             state: State::InjectResetVecJmp {
                 interrupts: InterruptPending::default(),
@@ -448,6 +472,10 @@ impl MOS6510 {
             debugger,
             debugger_ui,
         }
+    }
+
+    pub fn inject_instr_on_next_fetch(&mut self, i: Instr) {
+        self.state.interrupts().inject_instr = Some(i);
     }
 
     pub fn cycle(&mut self, irq: Option<Interrupt>, nmi: Option<Interrupt>) {
@@ -464,66 +492,90 @@ impl MOS6510 {
         self.state.interrupts().update_merge(&cycle_interrupt_pending);
 
         let mut instrbuf = [0 as u8; 3];
-        loop {
+        let next_instr = loop {
             match self.state {
-                State::ExecInstr { ref mut remaining_cycles, ref mut interrupts, ..} => {
+                State::ExecInstr { ref mut remaining_cycles, ref mut interrupts, .. } => {
                     *remaining_cycles = remaining_cycles.saturating_sub(1);
                     if *remaining_cycles == 0 {
-                        self.state = State::CheckInterrupts{interrupts: *interrupts};
+                        self.state = State::CheckInterrupts { interrupts: *interrupts };
                     }
                     return;
                 }
-                State::InjectResetVecJmp{interrupts, reset_vec} => {
+                State::InjectResetVecJmp { interrupts, reset_vec } => {
                     let vector = reset_vec as u16;
                     instrbuf = [0x6C, (vector & 0xFF) as u8, (vector >> 8) as u8];
-                    self.state = State::Decode{interrupts};
+                    self.state = State::Decode { interrupts };
                 }
-                State::CheckInterrupts{interrupts} => {
+                State::CheckInterrupts { interrupts } => {
                     let mut interrupts = interrupts;
-                    if let Some(reset_vec) = interrupts.ack_highest_prio() {
-                        // https://www.c64-wiki.de/wiki/IRQ
-                        // println!("irq raised: {}", self.reg());
-                        self.push_u16(self.reg.pc);
-                        self.push(self.reg.p.bits());
-                        self.reg.p.set(Flags::IRQD, true);
-                        self.state = State::InjectResetVecJmp{interrupts, reset_vec};
-                    } else {
-                        self.state = State::Fetch { interrupts }
+                    match interrupts.ack_highest_prio() {
+                        InterruptAckResult::ResetVec(reset_vec) => {
+                            // https://www.c64-wiki.de/wiki/IRQ
+                            // println!("irq raised: {}", self.reg());
+                            self.push_u16(self.reg.pc);
+                            self.push(self.reg.p.bits());
+                            self.reg.p.set(Flags::IRQD, true);
+                            self.state = State::InjectResetVecJmp { interrupts, reset_vec };
+                        }
+                        InterruptAckResult::InjectInstr(i) => {
+                            self.state =
+                                State::DecodedInstr { next_instr: i, interrupts: *self.state.interrupts() };
+                        }
+                        InterruptAckResult::None => {
+                            self.state = State::Fetch { interrupts };
+                        }
                     }
                 }
-                State::Fetch{interrupts} => {
+                State::Fetch { interrupts } => {
                     self.mem.read_one_to_three(self.reg.pc, &mut instrbuf[..]);
-                    self.state = State::Decode { interrupts }
+                    self.state = State::Decode { interrupts };
                 }
-                State::Decode{..} => {
-                    break;
+                State::Decode { .. } => {
+                    let (next_instr, _) = match instr::decode_instr(&instrbuf[..]) {
+                        Err(e) => panic!(
+                            "instruction decode error: {:?}\nregs: {}\nstack:\n\t{}",
+                            e,
+                            self.reg,
+                            self.dump_stack_lines(true).join("\n\t")
+                        ),
+                        Ok(instr) => instr,
+                    };
+                    self.state = State::DecodedInstr { next_instr, interrupts: *self.state.interrupts() };
                 }
-                State::DecodedInstr{..} => panic!("unreachable: DecodedInstr is intermediate intra-cycle state between BeginInstr and ExecInstr"),
+                State::DecodedInstr { next_instr, .. } => {
+                    break next_instr;
+                }
             }
-        }
-
-        let (next_instr, len) = match instr::decode_instr(&instrbuf[..]) {
-            Err(e) => panic!(
-                "instruction decode error: {:?}\nregs: {}\nstack:\n\t{}",
-                e,
-                self.reg,
-                self.dump_stack_lines(true).join("\n\t")
-            ),
-            Ok((instr, len)) => (instr, len),
         };
-        self.state = State::DecodedInstr { next_instr, interrupts: *self.state.interrupts() };
 
         // debugger callback
         let action = self.debugger.borrow_mut().post_decode_pre_apply_cb(&self);
         debug_assert!(self.debugger.try_borrow().is_ok());
-        match action {
-            DebuggerPostDecodePreApplyCbAction::DoCycle => (), // continue
-            action => {
-                self.debugger_ui.borrow_mut().handle_post_decode_pre_apply_action(action, &self);
+        let mos_mutation = match action {
+            DebuggerPostDecodePreApplyCbAction::DoCycle => None,
+            DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt => {
+                self.debugger_ui.borrow_mut().handle_post_decode_pre_apply_action(action, &self)
             }
         };
 
-        self.apply_instr(next_instr, self.reg.pc.checked_add(len as u16));
+        // apply debugger action if necessary, may exit early
+        match mos_mutation {
+            Some(DebuggerMOSMutation::ExecInstr(i)) => {
+                self.apply_instr(i, Some(self.reg.pc)); // don't move instruction pointer
+                match self.state {
+                    State::ExecInstr { ref remaining_cycles, .. } => {
+                        println!("skipping {} remaining cycles, back to debug prompt", remaining_cycles);
+                    }
+                    s => panic!("apply_instr set invalid state {:?}", s),
+                }
+                return;
+            }
+            Some(DebuggerMOSMutation::InjectInstr(i)) => self.inject_instr_on_next_fetch(i),
+            None => (),
+        };
+
+        // hot path
+        self.apply_instr(next_instr, self.reg.pc.checked_add(next_instr.len() as u16));
         match self.state {
             State::ExecInstr { ref mut remaining_cycles, .. } => {
                 assert!(
