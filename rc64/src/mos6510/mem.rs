@@ -111,7 +111,11 @@ enum BankingStateUpdate {
 
 impl Default for BankingState {
     fn default() -> BankingState {
-        let mut b = BankingState { cpu_control_lines: 0b00_00_01_11, expansion_port: 0b00_00_00_11, banking: Vec::with_capacity(20) };
+        let mut b = BankingState {
+            cpu_control_lines: 0b00_00_01_11,
+            expansion_port: 0b00_00_00_11,
+            banking: Vec::with_capacity(20),
+        };
         b.update_banking();
         b
     }
@@ -119,7 +123,6 @@ impl Default for BankingState {
 
 impl BankingState {
     pub fn update(&mut self, update: BankingStateUpdate) {
-        println!("BANKING UPDATE {:?}", update);
         match update {
             BankingStateUpdate::CpuControlLines(value) => {
                 self.cpu_control_lines = value;
@@ -137,7 +140,6 @@ impl BankingState {
         self.banking.clear();
 
         let bitmap = BitVec::from_bytes(&[self.expansion_port, self.cpu_control_lines]);
-        println!("BITMAP = {:?}", bitmap);
         #[allow(clippy::identity_op)]
         let loram = bitmap.get(15 - 0).unwrap();
         let hiram = bitmap.get(15 - 1).unwrap();
@@ -168,7 +170,7 @@ impl BankingState {
             }};
             ($kind:expr, $base:expr, $end_incl:expr ) => {
                 debug_assert!($end_incl > $base);
-                self.banking.push(Segment { base: $base, len: $end_incl - $base, kind: $kind })
+                self.banking.push(Segment { base: $base, len: $end_incl - $base + 1, kind: $kind })
             };
         }
         macro_rules! config {
@@ -227,8 +229,6 @@ impl BankingState {
             _ => assert!(combined < 32, "{}", combined),
         }
 
-        println!("segs = {:?}", self.banking);
-
         debug_assert!(
             {
                 let mut banking = self.banking.clone();
@@ -259,7 +259,13 @@ struct Segment {
 
 impl Segment {
     fn relative_address(&self, absolute_addr: u16) -> Option<u16> {
-        absolute_addr.checked_sub(self.base).and_then(|relative_addr| if relative_addr < self.len { Some(relative_addr) } else { None })
+        absolute_addr.checked_sub(self.base).and_then(|relative_addr| {
+            if relative_addr < self.len {
+                Some(relative_addr)
+            } else {
+                None
+            }
+        })
     }
 }
 

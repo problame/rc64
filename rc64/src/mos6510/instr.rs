@@ -143,7 +143,11 @@ pub fn decode_instr(peek: &[u8]) -> Result<(Instr, u8), DecodeErr> {
         ($n:expr) => {{
             len += $n;
             if peek.len() < len as usize {
-                return Err(DecodeErr::PeekLength { opcode: peek[0], expected_length: len, available_peek: peek.len() });
+                return Err(DecodeErr::PeekLength {
+                    opcode: peek[0],
+                    expected_length: len,
+                    available_peek: peek.len(),
+                });
             }
         }};
     }
@@ -506,7 +510,15 @@ mod tests {
         use Op::*;
         // https://www.c64-wiki.com/wiki/LDA
         use AddrCalcVars as ACV;
-        assert_eq!(4, Instr(LDA, AbX(0x1234)).cycles(Some(ACV { base: 0x1234, effective: 0x1234 })), "no crossing");
-        assert_eq!(5, Instr(LDA, AbX(0x1234)).cycles(Some(ACV { base: 0x1234, effective: 0x1300 })), "crossing");
+        assert_eq!(
+            4,
+            Instr(LDA, AbX(0x1234)).cycles(Some(ACV { base: 0x1234, effective: 0x1234 })),
+            "no crossing"
+        );
+        assert_eq!(
+            5,
+            Instr(LDA, AbX(0x1234)).cycles(Some(ACV { base: 0x1234, effective: 0x1300 })),
+            "crossing"
+        );
     }
 }

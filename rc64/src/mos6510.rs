@@ -1,6 +1,7 @@
 pub mod instr;
 mod mem;
 
+use crate::interrupt::Interrupt;
 use crate::ram::RAM;
 use crate::utils::R2C;
 pub use mem::*;
@@ -51,7 +52,11 @@ impl Display for Flags {
     fn fmt(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
         macro_rules! flag {
             ($flag:expr, $ch:literal) => {
-                let ch = if self.contains($flag) { $ch.to_uppercase().to_string() } else { $ch.to_lowercase().to_string() };
+                let ch = if self.contains($flag) {
+                    $ch.to_uppercase().to_string()
+                } else {
+                    $ch.to_lowercase().to_string()
+                };
                 write!(formatter, "{}", ch)?;
             };
         }
@@ -86,7 +91,14 @@ impl std::fmt::Display for Regs {
 
 const STACK_BOTTOM: u16 = 0x0100;
 const STACK_TOP: u16 = STACK_BOTTOM + 0xff;
-const RESET_VEC: u16 = 0xfffc;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Display)]
+#[repr(u16)]
+pub enum ResetVec {
+    NMI = 0xfffa,
+    RESET = 0xfffc,
+    IRQ = 0xfffe,
+}
 
 impl Default for Regs {
     fn default() -> Self {
@@ -169,8 +181,11 @@ impl Regs {
     // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
     #[inline]
     fn sub_from_a_with_carry_and_set_carry(&mut self, v: u8) {
-        unimplemented!();
-        self.add_to_a_with_carry_and_set_carry(!v); // TODO doesn't pass test case
+        if cfg!(feature = "headless-chicken") {
+            self.add_to_a_with_carry_and_set_carry(!v); // TODO doesn't pass test case
+        } else {
+            unimplemented!()
+        }
     }
 
     #[inline]
@@ -199,19 +214,63 @@ impl Regs {
 
 use instr::*;
 
+#[derive(Eq, PartialEq, Debug, Clone, Copy, Default)]
+pub struct InterruptPending {
+    pub irq: bool,
+    pub nmi: bool,
+}
+
+impl Display for InterruptPending {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        let InterruptPending { irq, nmi } = self;
+        write!(f, "irq={:?} nmi={:?}", irq, nmi)
+    }
+}
+
+impl InterruptPending {
+    fn update_merge(&mut self, update: &InterruptPending) {
+        self.irq |= update.irq;
+        self.nmi |= update.nmi;
+    }
+    fn ack_highest_prio(&mut self) -> Option<ResetVec> {
+        if self.nmi {
+            self.nmi = false;
+            self.irq = false;
+            return Some(ResetVec::NMI);
+        } else if self.irq {
+            self.irq = false;
+            return Some(ResetVec::IRQ);
+        }
+        None
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Clone, Copy)]
 pub enum State {
-    Reset,
-    BeginInstr,
-    DecodedInstr(Instr),
-    ExecInstr { instr: Instr, remaining_cycles: usize },
+    CheckInterrupts { interrupts: InterruptPending },
+    InjectResetVecJmp { interrupts: InterruptPending, reset_vec: ResetVec },
+    Fetch { interrupts: InterruptPending },
+    Decode { interrupts: InterruptPending },
+    DecodedInstr { interrupts: InterruptPending, next_instr: Instr },
+    ExecInstr { instr: Instr, remaining_cycles: usize, interrupts: InterruptPending },
 }
 
 impl State {
     pub fn decoded_instr(&self) -> Option<&Instr> {
         match self {
-            State::DecodedInstr(i) => Some(i),
+            State::DecodedInstr { next_instr, .. } => Some(next_instr),
             _ => None,
+        }
+    }
+    pub fn interrupts(&mut self) -> &mut InterruptPending {
+        use State::*;
+        match self {
+            CheckInterrupts { interrupts } => interrupts,
+            InjectResetVecJmp { interrupts, .. } => interrupts,
+            Fetch { interrupts, .. } => interrupts,
+            Decode { interrupts, .. } => interrupts,
+            ExecInstr { interrupts, .. } => interrupts,
+            DecodedInstr { interrupts, .. } => interrupts,
         }
     }
 }
@@ -219,10 +278,18 @@ impl State {
 impl Display for State {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
-            State::Reset => write!(f, "reset"),
-            State::BeginInstr => write!(f, "pre_decode"),
-            State::DecodedInstr(i) => write!(f, "decoded {}", i),
-            State::ExecInstr { instr, remaining_cycles } => write!(f, "exec[{} cycles left] {}", remaining_cycles, instr),
+            State::CheckInterrupts { interrupts } => write!(f, "check_irqs irqs={{{}}}", interrupts),
+            State::InjectResetVecJmp { interrupts, reset_vec } => {
+                write!(f, "inject_reset_vec_jmp {}, irqs={{{}}}", reset_vec, interrupts)
+            }
+            State::Fetch { interrupts } => write!(f, "fetch irqs={{{}}}", interrupts),
+            State::Decode { interrupts } => write!(f, "decode irqs={{{}}}", interrupts),
+            State::DecodedInstr { interrupts, next_instr } => {
+                write!(f, "decoded {}, irqs={{{}}}", next_instr, interrupts)
+            }
+            State::ExecInstr { instr, remaining_cycles, interrupts } => {
+                write!(f, "exec[{} cycles left] {} irqs={{{}}}", remaining_cycles, instr, interrupts)
+            }
         }
     }
 }
@@ -239,7 +306,13 @@ pub struct Debugger {
 
 impl Default for Debugger {
     fn default() -> Self {
-        Debugger { pc_bps: HashSet::default(), ea_bps: HashSet::default(), break_after_next_decode: false, instr_logging_enabled: false, break_on_brk: false }
+        Debugger {
+            pc_bps: HashSet::default(),
+            ea_bps: HashSet::default(),
+            break_after_next_decode: false,
+            instr_logging_enabled: false,
+            break_on_brk: false,
+        }
     }
 }
 
@@ -286,7 +359,10 @@ impl Debugger {
         if self.instr_logging_enabled {
             println!("INSTRLOG: {} REG: {}", mos.state(), mos.reg()) // FIXME to DebuggerUI
         }
-        if self.break_on_brk && (mos.state.decoded_instr().unwrap().op() == crate::mos6510::instr::Op::BRK || mos.reg.p.contains(Flags::BRK)) {
+        if self.break_on_brk
+            && (mos.state.decoded_instr().unwrap().op() == crate::mos6510::instr::Op::BRK
+                || mos.reg.p.contains(Flags::BRK))
+        {
             return DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt;
         }
         if self.break_after_next_decode || self.pc_bps.contains(&mos.reg.pc) {
@@ -304,42 +380,138 @@ impl Debugger {
 }
 
 pub trait DebuggerUI {
-    fn handle_post_decode_pre_apply_action(&mut self, action: DebuggerPostDecodePreApplyCbAction, mos: &MOS6510);
+    fn handle_post_decode_pre_apply_action(
+        &mut self,
+        action: DebuggerPostDecodePreApplyCbAction,
+        mos: &MOS6510,
+    );
+}
+
+/// Shared functions of MOS6510 and InstrMatchArgs
+trait StackHelper {
+    fn mem(&mut self) -> &mut MemoryView;
+    fn reg(&mut self) -> &mut Regs;
+
+    fn push(&mut self, val: u8) {
+        let sp = self.reg().sp_abs();
+        self.mem().write(sp, val);
+        self.reg().sp -= 1;
+    }
+
+    fn push_u16(&mut self, val: u16) {
+        self.reg().sp -= 1;
+        let sp = self.reg().sp_abs();
+        self.mem().write_u16(sp, val);
+        self.reg().sp -= 1;
+    }
+
+    fn pull(&mut self) -> u8 {
+        self.reg().sp += 1;
+        let sp = self.reg().sp_abs();
+        self.mem().read(sp)
+    }
+
+    fn pull_u16(&mut self) -> u16 {
+        self.reg().sp += 1;
+        let sp = self.reg().sp_abs();
+        let val = self.mem().read_u16(sp);
+        self.reg().sp += 1;
+        val
+    }
+}
+
+impl StackHelper for MOS6510 {
+    fn mem(&mut self) -> &mut MemoryView {
+        &mut self.mem
+    }
+    fn reg(&mut self) -> &mut Regs {
+        &mut self.reg
+    }
 }
 
 impl MOS6510 {
-    pub fn new(areas: Areas, ram: Rc<RefCell<RAM>>, debugger: R2C<Debugger>, debugger_ui: R2C<dyn DebuggerUI>) -> Self {
+    pub fn new(
+        areas: Areas,
+        ram: Rc<RefCell<RAM>>,
+        debugger: R2C<Debugger>,
+        debugger_ui: R2C<dyn DebuggerUI>,
+    ) -> Self {
         let mem = MemoryView::new(areas, ram);
         let reg = Regs::default();
-        MOS6510 { mem, reg, state: State::Reset, debugger, debugger_ui }
+        MOS6510 {
+            mem,
+            reg,
+            state: State::InjectResetVecJmp {
+                interrupts: InterruptPending::default(),
+                reset_vec: ResetVec::RESET,
+            },
+            debugger,
+            debugger_ui,
+        }
     }
 
-    pub fn cycle(&mut self) {
+    pub fn cycle(&mut self, irq: Option<Interrupt>, nmi: Option<Interrupt>) {
+        // handle the interrupt at the time it happens (even in the middle of executing an instruction)
+        let cycle_interrupt_pending = {
+            let mut ip = InterruptPending::default();
+            ip.irq = !self.reg.p.contains(Flags::IRQD) && irq.is_some();
+            ip.nmi = nmi.is_some();
+            ip
+        };
+        if cycle_interrupt_pending.nmi {
+            unimplemented!()
+        }
+        self.state.interrupts().update_merge(&cycle_interrupt_pending);
+
         let mut instrbuf = [0 as u8; 3];
-        match self.state {
-            State::ExecInstr { ref mut remaining_cycles, .. } => {
-                *remaining_cycles = remaining_cycles.saturating_sub(1);
-                if *remaining_cycles == 0 {
-                    self.state = State::BeginInstr;
+        loop {
+            match self.state {
+                State::ExecInstr { ref mut remaining_cycles, ref mut interrupts, ..} => {
+                    *remaining_cycles = remaining_cycles.saturating_sub(1);
+                    if *remaining_cycles == 0 {
+                        self.state = State::CheckInterrupts{interrupts: *interrupts};
+                    }
+                    return;
                 }
-                return;
+                State::InjectResetVecJmp{interrupts, reset_vec} => {
+                    let vector = reset_vec as u16;
+                    instrbuf = [0x6C, (vector & 0xFF) as u8, (vector >> 8) as u8];
+                    self.state = State::Decode{interrupts};
+                }
+                State::CheckInterrupts{interrupts} => {
+                    let mut interrupts = interrupts;
+                    if let Some(reset_vec) = interrupts.ack_highest_prio() {
+                        // https://www.c64-wiki.de/wiki/IRQ
+                        // println!("irq raised: {}", self.reg());
+                        self.push_u16(self.reg.pc);
+                        self.push(self.reg.p.bits());
+                        self.reg.p.set(Flags::IRQD, true);
+                        self.state = State::InjectResetVecJmp{interrupts, reset_vec};
+                    } else {
+                        self.state = State::Fetch { interrupts }
+                    }
+                }
+                State::Fetch{interrupts} => {
+                    self.mem.read_one_to_three(self.reg.pc, &mut instrbuf[..]);
+                    self.state = State::Decode { interrupts }
+                }
+                State::Decode{..} => {
+                    break;
+                }
+                State::DecodedInstr{..} => panic!("unreachable: DecodedInstr is intermediate intra-cycle state between BeginInstr and ExecInstr"),
             }
-            State::Reset => {
-                instrbuf = [0x6C, (RESET_VEC & 0xFF) as u8, (RESET_VEC >> 8) as u8];
-                self.state = State::BeginInstr;
-                // fallthrough
-            }
-            State::BeginInstr => {
-                self.mem.read_one_to_three(self.reg.pc, &mut instrbuf[..]);
-            }
-            State::DecodedInstr(_) => panic!("unreachable: DecodedInstr is intermediate intra-cycle state between BeginInstr and ExecInstr"),
         }
 
         let (next_instr, len) = match instr::decode_instr(&instrbuf[..]) {
-            Err(e) => panic!("instruction decode error: {:?}\nregs: {}\nstack:\n\t{}", e, self.reg(), self.dump_stack_lines(true).join("\n\t")),
+            Err(e) => panic!(
+                "instruction decode error: {:?}\nregs: {}\nstack:\n\t{}",
+                e,
+                self.reg,
+                self.dump_stack_lines(true).join("\n\t")
+            ),
             Ok((instr, len)) => (instr, len),
         };
-        self.state = State::DecodedInstr(next_instr);
+        self.state = State::DecodedInstr { next_instr, interrupts: *self.state.interrupts() };
 
         // debugger callback
         let action = self.debugger.borrow_mut().post_decode_pre_apply_cb(&self);
@@ -354,7 +526,11 @@ impl MOS6510 {
         self.apply_instr(next_instr, self.reg.pc.checked_add(len as u16));
         match self.state {
             State::ExecInstr { ref mut remaining_cycles, .. } => {
-                assert!(*remaining_cycles >= 2, "remaining_cycles = {} (minimum cycle count is 2)", remaining_cycles);
+                assert!(
+                    *remaining_cycles >= 2,
+                    "remaining_cycles = {} (minimum cycle count is 2)",
+                    remaining_cycles
+                );
                 // we already did one cycle in apply_instr
                 *remaining_cycles -= 1;
             }
@@ -367,7 +543,11 @@ impl MOS6510 {
     }
 
     pub fn dump_stack_lines(&self, from_sp_upward: bool) -> Vec<String> {
-        Vec::from_iter(self.copy_stack(from_sp_upward).into_iter().map(|(addr, val)| format!("0x{:04x} = 0x{:02x}", addr, val)))
+        Vec::from_iter(
+            self.copy_stack(from_sp_upward)
+                .into_iter()
+                .map(|(addr, val)| format!("0x{:04x} = 0x{:02x}", addr, val)),
+        )
     }
 
     pub fn copy_stack(&self, from_sp_upward: bool) -> Vec<(u16, u8)> {
@@ -391,7 +571,7 @@ impl MOS6510 {
     #[inline]
     fn rol(v: u8, carry: bool) -> (bool, u8) {
         let res = (v as u16) << 1;
-        (res & 0x100 != 0, ((res & 0xff) as u8) & (carry as u8))
+        (res & 0x100 != 0, ((res & 0xff) as u8) | (carry as u8))
     }
 
     #[inline]
@@ -470,8 +650,12 @@ impl MOS6510 {
 
         let effective_addr_load = effective_addr.map(|a| self.mem.read(a.effective));
 
-        debug_assert_eq!(self.state, State::BeginInstr);
-        self.state = State::ExecInstr { remaining_cycles: instr.cycles(effective_addr), instr };
+        //debug_assert_eq!(self.state, State::BeginInstr);
+        self.state = State::ExecInstr {
+            remaining_cycles: instr.cycles(effective_addr),
+            instr,
+            interrupts: *self.state.interrupts(),
+        };
 
         struct InstrMatchArgs<'a> {
             instr: Instr,
@@ -480,6 +664,15 @@ impl MOS6510 {
             effective_addr: Option<u16>,
             effective_addr_load: Option<u8>,
             next_pc: &'a mut Option<u16>,
+        }
+
+        impl<'a> StackHelper for InstrMatchArgs<'a> {
+            fn mem(&mut self) -> &mut MemoryView {
+                &mut self.mem
+            }
+            fn reg(&mut self) -> &mut Regs {
+                &mut self.reg
+            }
         }
 
         // call to the macro-transformed fn instr_match below
@@ -508,7 +701,7 @@ impl MOS6510 {
         }
 
         #[gen_instr_match]
-        fn instr_match(args: InstrMatchArgs) {
+        fn instr_match(mut args: InstrMatchArgs) {
             match args.instr {
             // Sources http://www.obelisk.me.uk/6502/instructions.html
             //         https://www.masswerk.at/6502/6502_instruction_set.html
@@ -559,23 +752,20 @@ impl MOS6510 {
             Instr(TXS, Imp) => args.reg.sp = args.reg.x,
             // PHA 	Push accumulator on stack
             Instr(PHA, Imp) => {
-                args.mem.write(args.reg.sp_abs(), args.reg.a);
-                args.reg.sp = args.reg.sp.overflowing_sub(1).0; // TODO instrument overflow
+                args.push(args.reg.a)
             },
             // PHP 	Push processor status on stack
             Instr(PHP, Imp) => {
-                args.mem.write(args.reg.sp_abs(), args.reg.p.bits());
-                args.reg.sp = args.reg.sp.overflowing_sub(1).0; // TODO instrument overflow
+                args.push(args.reg.p.bits())
             },
             // PLA 	Pull accumulator from stack 	N,Z
             Instr(PLA, Imp) => {
-                args.reg.sp = args.reg.sp.overflowing_add(1).0; // TODO instrument overflow
-                args.reg.lda(args.mem.read(args.reg.sp_abs()));
+                let acc = args.pull();
+                args.reg.lda(acc)
             }
             // PLP 	Pull processor status from stack 	All
             Instr(PLP, Imp) => {
-                args.reg.sp = args.reg.sp.overflowing_add(1).0; // TODO instrument overflow
-                match Flags::from_bits(args.mem.read(args.reg.sp_abs())) {
+                match Flags::from_bits(args.pull()) {
                     Some(p) => args.reg.p = p,
                     None => unimplemented!(), // TODO processor behavior if unused bit is set?
                 }
@@ -669,7 +859,7 @@ impl MOS6510 {
                 args.reg.set_nzc_flags(v, carry);
             },
             // LSR 	Logical Shift Right 	N,Z,C
-            Instr(LSR, Acc) => {
+            Instr(LSR, Imp) => {
                 let (carry, v) = MOS6510::lsr(args.reg.a);
                 args.reg.lda(v);
                 args.reg.set_nzc_flags(v, carry);
@@ -714,16 +904,12 @@ impl MOS6510 {
             Instr(JMP, Abs(a)) => *args.next_pc = Some(a),
             // JSR 	Jump to a subroutine
             Instr(JSR, Abs(a)) => {
-                args.reg.sp -= 1; // TODO stack overflow instrumentation
-                args.mem.write_u16(args.reg.sp_abs(), args.next_pc.unwrap() - 1);
-                args.reg.sp -= 1; // TODO stack overflow instrumentation
+                args.push_u16(args.next_pc.unwrap() - 1);
                 *args.next_pc = Some(a);
             }
             // RTS 	Return from subroutine
             Instr(RTS, Imp) => {
-                args.reg.sp += 1;
-                *args.next_pc = Some(args.mem.read_u16(args.reg.sp_abs()).overflowing_add(1).0);
-                args.reg.sp += 1;
+                *args.next_pc = Some(args.pull_u16().overflowing_add(1).0);
             }
 
             /***************** Branches ******************/
@@ -771,30 +957,22 @@ impl MOS6510 {
 
             // BRK 	Force an interrupt 	B
             Instr(BRK, Imp) => {
-                args.reg.sp -= 1;
-                args.mem.write_u16(args.reg.sp_abs(), args.reg.pc);
-                args.reg.sp -= 1;
-
-                args.mem.write(args.reg.sp_abs(), args.reg.p.bits());
-                args.reg.sp -= 1;
+                unimplemented!();
+                args.push_u16(args.reg.pc);
+                args.push(args.reg.p.bits());
 
                 args.reg.p.set(Flags::BRK, true);
-                *args.next_pc = Some(args.mem.read_u16(0xFFFE));
+                *args.next_pc = Some(args.mem.read_u16(ResetVec::IRQ as u16));
             },
             // NOP 	No Operation
             Instr(NOP, Imp) => (),
             // RTI 	Return from Interrupt 	All
             Instr(RTI, Imp) => {
-                unimplemented!(); // TODO not sure if stack handling is correct, see this commit's message.
-                                  // compare to JSR and RTS
-                args.reg.sp += 1;
-                args.reg.p = match Flags::from_bits(args.mem.read(args.reg.sp_abs())) {
+                args.reg.p = match Flags::from_bits(args.pull()) {
                     Some(f) => f,
                     None => unimplemented!(), // TODO (behaviorwith unset bits?)
                 };
-                args.reg.sp += 1;
-                *args.next_pc = Some(args.mem.read_u16(args.reg.sp_abs()));
-                args.reg.sp += 1;
+                *args.next_pc = Some(args.pull_u16());
                 // restore of p implicitly resets BRK
             },
 
@@ -836,9 +1014,27 @@ mod tests {
         fn adc() {
             // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
             let tests = [
-                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0x50, post_a: 0xa0, post_flags: Flags::OVFL | Flags::NEG },
-                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0xd0, post_a: 0x20, post_flags: Flags::CARRY },
-                Case { pre_a: 0xd0, pre_flags: Flags::empty(), v: 0x90, post_a: 0x60, post_flags: Flags::CARRY | Flags::OVFL },
+                Case {
+                    pre_a: 0x50,
+                    pre_flags: Flags::empty(),
+                    v: 0x50,
+                    post_a: 0xa0,
+                    post_flags: Flags::OVFL | Flags::NEG,
+                },
+                Case {
+                    pre_a: 0x50,
+                    pre_flags: Flags::empty(),
+                    v: 0xd0,
+                    post_a: 0x20,
+                    post_flags: Flags::CARRY,
+                },
+                Case {
+                    pre_a: 0xd0,
+                    pre_flags: Flags::empty(),
+                    v: 0x90,
+                    post_a: 0x60,
+                    post_flags: Flags::CARRY | Flags::OVFL,
+                },
             ];
             for case in &tests {
                 println!("running:\n{:#?}", case);
@@ -855,8 +1051,20 @@ mod tests {
         fn sdc() {
             // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
             let tests = [
-                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0xf0, post_a: 0x60, post_flags: Flags::empty() },
-                Case { pre_a: 0x50, pre_flags: Flags::empty(), v: 0xb0, post_a: 0xa0, post_flags: Flags::OVFL },
+                Case {
+                    pre_a: 0x50,
+                    pre_flags: Flags::empty(),
+                    v: 0xf0,
+                    post_a: 0x60,
+                    post_flags: Flags::empty(),
+                },
+                Case {
+                    pre_a: 0x50,
+                    pre_flags: Flags::empty(),
+                    v: 0xb0,
+                    post_a: 0xa0,
+                    post_flags: Flags::OVFL,
+                },
             ];
             for case in &tests {
                 println!("running:\n{:#?}", case);

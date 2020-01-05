@@ -4,7 +4,8 @@ fn main() {
     let html = include_str!("timing_table.html");
 
     let fragment = Html::parse_fragment(html);
-    let selector = Selector::parse("tr:not(:first-child) td:not(:first-child):not([bgcolor]) font").unwrap();
+    let selector =
+        Selector::parse("tr:not(:first-child) td:not(:first-child):not([bgcolor]) font").unwrap();
     use std::collections::HashSet;
     let mut opcs = HashSet::new();
     let mut modes = HashSet::new();
@@ -80,7 +81,8 @@ fn main() {
         }
         .map(|s| vec![s.to_owned()])
         .unwrap_or(vec!["Imp".to_owned(), "Acc".to_owned()]);
-        let page_boundary_dependent = if page_boundary_dependent { "AddOneCycle" } else { "NoAdditionalCycle" };
+        let page_boundary_dependent =
+            if page_boundary_dependent { "AddOneCycle" } else { "NoAdditionalCycle" };
         for mode in modes {
             let mut s = String::new();
             write!(
