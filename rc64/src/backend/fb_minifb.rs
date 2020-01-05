@@ -33,7 +33,7 @@ impl Minifb {
                     fb.update_with_buffer(&buf).unwrap();
 
                     let mut pressed_keys = pressed_keys.lock();
-                    *pressed_keys = fb.get_keys_pressed(KeyRepeat::No).unwrap_or(Vec::new());
+                    *pressed_keys = fb.get_keys().unwrap_or(Vec::new());
                 }
             })
         };
@@ -143,7 +143,7 @@ impl TryFrom<Key> for C64Key {
             RightBracket   => Ok(C64Key::Star),
             Semicolon      => Ok(C64Key::Semicolon),
             Slash          => Ok(C64Key::Slash),
-            Backspace      => Ok(C64Key::Left),
+            Backspace      => Ok(C64Key::Delete),
             Delete         => Ok(C64Key::Delete),
             End            => Ok(C64Key::Stop),
             Enter          => Ok(C64Key::Return),
