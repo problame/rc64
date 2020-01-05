@@ -221,6 +221,56 @@ exec   HEX [HEX [HEX]]  exe raw instruction now
                         .borrow_mut()
                         .enqueue_key_event(time::Duration::from_millis(250), keys);
                 }
+                x if x.starts_with("loadtomem ") => {
+                    let comps = x.split(" ").collect::<Vec<_>>();
+                    let (addr, path) = {
+                        if comps.len() != 3 {
+                            println!("invalid argument");
+                            continue;
+                        } else {
+                            (comps[1], comps[2])
+                        }
+                    };
+                    let addr = match u16::from_str_radix(addr, 16) {
+                        Err(e) => {
+                            println!("invalid address {:?}: {:?}", &addr, e);
+                            continue;
+                        }
+                        Ok(addr) => addr,
+                    };
+                    let data = match std::fs::read(path) {
+                        Ok(d) => d,
+                        Err(e) => {
+                            println!("{:?}", e);
+                            continue;
+                        }
+                    };
+                    println!("loading {} bytes to addr 0x{:04x}", data.len(), addr);
+                    let ram = mos.ram();
+                    let mut ram = ram.borrow_mut();
+                    for (i, b) in data.iter().enumerate() {
+                        ram.write(addr + (i as u16), *b);
+                    }
+                }
+                x if x.starts_with("setpc ") => {
+                    let comps = x.split(" ").collect::<Vec<_>>();
+                    let addr = {
+                        if comps.len() != 2 {
+                            println!("invalid argument");
+                            continue;
+                        } else {
+                            comps[1]
+                        }
+                    };
+                    let addr = match u16::from_str_radix(addr, 16) {
+                        Err(e) => {
+                            println!("invalid address {:?}: {:?}", &addr, e);
+                            continue;
+                        }
+                        Ok(addr) => addr,
+                    };
+                    return Some(mos6510::DebuggerMOSMutation::SetPC(addr));
+                }
                 x => {
                     println!("unknown command: {:?}", x);
                     continue;

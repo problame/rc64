@@ -402,6 +402,7 @@ impl Debugger {
 pub enum DebuggerMOSMutation {
     InjectInstr(Instr),
     ExecInstr(Instr),
+    SetPC(u16),
 }
 
 pub trait DebuggerUI {
@@ -476,6 +477,14 @@ impl MOS6510 {
             debugger_ui,
             keyboard_emulator,
         }
+    }
+
+    pub fn ram(&self) -> R2C<RAM> {
+        self.ram.clone()
+    }
+
+    pub fn reset_pc_to(&mut self, addr: u16) {
+        self.reg.pc = addr;
     }
 
     pub fn inject_instr_on_next_fetch(&mut self, i: Instr) {
@@ -575,6 +584,11 @@ impl MOS6510 {
                 return;
             }
             Some(DebuggerMOSMutation::InjectInstr(i)) => self.inject_instr_on_next_fetch(i),
+            Some(DebuggerMOSMutation::SetPC(pc)) => {
+                self.reg.pc = pc;
+                self.state = State::Fetch { interrupts: *self.state.interrupts() };
+                return;
+            }
             None => (),
         };
 
