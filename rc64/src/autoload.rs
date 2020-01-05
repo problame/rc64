@@ -1,3 +1,5 @@
+use crate::cia::keyboard::C64Key;
+use crate::cia::keyboard::EmulatedKeyboard;
 use crate::ram::RAM;
 use crate::utils::R2C;
 
@@ -63,6 +65,7 @@ pub struct AutloadState {
     st: State,
     prg: PRG,
     ram: R2C<RAM>,
+    keyboard_emulator: R2C<EmulatedKeyboard>,
 }
 
 impl AutloadState {
@@ -90,8 +93,8 @@ enum State {
 }
 
 impl AutloadState {
-    pub fn new(prg: PRG, ram: R2C<RAM>) -> Self {
-        AutloadState { st: State::Init { last_check_at: Instant::now() }, ram, prg }
+    pub fn new(prg: PRG, ram: R2C<RAM>, keyboard_emulator: R2C<EmulatedKeyboard>) -> Self {
+        AutloadState { st: State::Init { last_check_at: Instant::now() }, ram, prg, keyboard_emulator }
     }
 
     pub fn cycle(&mut self) {
@@ -125,7 +128,11 @@ impl AutloadState {
                 self.prg.write_to_ram(&mut self.ram.borrow_mut());
                 println!("loaded prg to ram: {:?}", self.prg);
 
-                unimplemented!("inject keyboard RUN");
+                for key in vec![C64Key::R, C64Key::U, C64Key::N, C64Key::Return] {
+                    self.keyboard_emulator
+                        .borrow_mut()
+                        .enqueue_key_event(Duration::from_millis(250), vec![key]);
+                }
 
                 State::LoadedAndRunInjected
             }

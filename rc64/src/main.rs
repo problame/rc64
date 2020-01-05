@@ -5,6 +5,9 @@ extern crate strum_macros;
 extern crate bitflags;
 
 #[macro_use]
+extern crate derive_more;
+
+#[macro_use]
 mod utils;
 mod cia;
 mod color_ram;
@@ -19,6 +22,7 @@ mod backend {
 mod autoload;
 mod debugger_cli;
 
+use crate::cia::keyboard::EmulatedKeyboard;
 use crate::cia::{CIAKind, CIA};
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
@@ -70,12 +74,15 @@ fn main() {
     let vic20 =
         r2c_new!(vic20::VIC20::new(rom::stock::CHAR_ROM, ram.clone(), color_ram.clone(), screen.clone()));
 
-    let cia1 = r2c_new!(CIA::<()>::new(CIAKind::Chip1 { peripherals: screen.clone() }));
+    let keyboard_emulator = r2c_new!(EmulatedKeyboard::new());
+
+    let cia1 = r2c_new!(CIA::<()>::new(CIAKind::Chip1 {
+        peripherals: r2c_new!((screen.clone(), keyboard_emulator.clone()))
+    }));
     let cia2 = r2c_new!(CIA::new(CIAKind::Chip2 { vic: vic20.clone() }));
 
     use mos6510::*;
 
-    // FIXME These probably all need to be Rc<RefCell<.>>s
     let areas = enum_map::enum_map! {
         MemoryAreaKind::BasicRom =>  r2c_new!(rom::stock::BASIC_ROM) as R2C<dyn MemoryArea>,
         MemoryAreaKind::KernelRom => kernal.clone(),
@@ -102,8 +109,13 @@ fn main() {
     signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&sigint_pending))
         .expect("cannot register SIGINT handler");
 
-    let mut mpu =
-        mos6510::MOS6510::new(areas, ram.clone(), debugger.clone(), debugger_cli as R2C<dyn DebuggerUI>);
+    let mut mpu = mos6510::MOS6510::new(
+        areas,
+        ram.clone(),
+        debugger.clone(),
+        debugger_cli as R2C<dyn DebuggerUI>,
+        keyboard_emulator.clone(),
+    );
 
     use spin_sleep::LoopHelper;
 
@@ -113,7 +125,7 @@ fn main() {
         .prg
         .map(|path| std::fs::read(path).expect("read PRG"))
         .map(|bytes| autoload::PRG::try_from(bytes).expect("parse PRG"))
-        .map(|prg| autoload::AutloadState::new(prg, ram.clone()));
+        .map(|prg| autoload::AutloadState::new(prg, ram.clone(), keyboard_emulator.clone()));
 
     let mut cycles = 0;
     loop {

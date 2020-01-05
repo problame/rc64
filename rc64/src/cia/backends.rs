@@ -302,6 +302,20 @@ pub trait PeripheralDevicesBackend {
     fn get_current_keyboard_matrix(&self) -> KeyboardMatrix;
 }
 
+impl<A: PeripheralDevicesBackend, B: PeripheralDevicesBackend> PeripheralDevicesBackend
+    for (R2C<A>, R2C<B>)
+{
+    fn get_current_keyboard_matrix(&self) -> KeyboardMatrix {
+        match self {
+            (a, b) => {
+                let mut matrix = a.borrow().get_current_keyboard_matrix();
+                matrix.merge(&b.borrow().get_current_keyboard_matrix());
+                matrix
+            }
+        }
+    }
+}
+
 impl<T> DataPortBackend<T> {
     pub(super) fn cycle(&mut self) -> Option<Interrupt> {
         // if let DataPortBackend::CIA1 { peripherals } = self {

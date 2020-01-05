@@ -1,6 +1,9 @@
+use crate::cia::keyboard::C64Key;
 use crate::mos6510;
 use lazy_static::lazy_static;
 use regex::Regex;
+use std::str::FromStr;
+use std::time;
 
 pub struct DebuggerCli {
     rl: rustyline::Editor<()>,
@@ -199,6 +202,24 @@ exec   HEX [HEX [HEX]]  exe raw instruction now
                         x => unreachable!("{:?}", x),
                     };
                     return Some(mutation);
+                }
+                x if x.starts_with("press ") => {
+                    let mut keys = x.split(" ").collect::<Vec<_>>();
+                    keys.remove(0);
+                    let keys = {
+                        let keys: Result<Vec<_>, _> = keys.into_iter().map(C64Key::from_str).collect();
+                        match keys {
+                            Ok(keys) => keys,
+                            Err(err) => {
+                                println!("Invalid key: {}", err);
+                                continue;
+                            }
+                        }
+                    };
+
+                    mos.keyboard_emulator
+                        .borrow_mut()
+                        .enqueue_key_event(time::Duration::from_millis(250), keys);
                 }
                 x => {
                     println!("unknown command: {:?}", x);

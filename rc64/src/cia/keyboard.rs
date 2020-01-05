@@ -1,10 +1,14 @@
+use crate::cia::backends::PeripheralDevicesBackend;
 use enum_map::{enum_map, Enum, EnumMap};
 use lazy_static::lazy_static;
+use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::fmt;
 use std::ops::Index;
 use std::ops::IndexMut;
+use std::time;
 
-#[derive(Enum)]
+#[derive(Debug, Enum, EnumString)]
 pub enum C64Key {
     A,
     B,
@@ -173,7 +177,7 @@ lazy_static! {
 /// https://www.c64-wiki.com/wiki/Keyboard#Keyboard_Matrix
 /// CATCH1: row major, i.e. 8 rows with 8 columns each, i.e. `matrix[row_idx][col_idx]`
 /// CATCH2: idx=0 is rightmost / bottommost in the table on the website
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct KeyboardMatrix([[bool; KeyboardMatrix::NUM_COLS]; KeyboardMatrix::NUM_ROWS]);
 
 impl KeyboardMatrix {
@@ -194,6 +198,15 @@ impl KeyboardMatrix {
             }
         }
         true
+    }
+
+    pub fn merge(&mut self, other: &KeyboardMatrix) {
+        for row in 0..Self::NUM_ROWS {
+            for column in 0..Self::NUM_COLS {
+                let idx = MatrixIndex { row: row as u8, column: column as u8 };
+                self[idx] |= other[idx];
+            }
+        }
     }
 }
 
@@ -240,10 +253,10 @@ where
 
 impl fmt::Debug for KeyboardMatrix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "  01234567\n");
-        write!(f, "  --------\n");
+        write!(f, "  01234567\n")?;
+        write!(f, "  --------\n")?;
         for (row_idx, row) in self.0.iter().enumerate() {
-            write!(f, "{}|", row_idx);
+            write!(f, "{}|", row_idx)?;
             for is_pressed in row {
                 write!(f, "{}", *is_pressed as u8)?;
             }
@@ -251,5 +264,52 @@ impl fmt::Debug for KeyboardMatrix {
         }
 
         Ok(())
+    }
+}
+
+pub struct KeyEvent {
+    duration: time::Duration,
+    keys: Vec<C64Key>,
+}
+
+pub struct EmulatedKeyboard {
+    current_matrix: Cell<KeyboardMatrix>,
+    current_key_expiration_time: Cell<Option<time::Instant>>,
+    key_queue: RefCell<VecDeque<KeyEvent>>,
+}
+
+impl EmulatedKeyboard {
+    pub fn new() -> Self {
+        EmulatedKeyboard {
+            current_matrix: Cell::new(KeyboardMatrix::default()),
+            current_key_expiration_time: Cell::new(None),
+            key_queue: RefCell::new(VecDeque::new()),
+        }
+    }
+
+    pub fn enqueue_key_event(&mut self, duration: time::Duration, keys: Vec<C64Key>) {
+        self.key_queue.borrow_mut().push_back(KeyEvent { duration, keys })
+    }
+}
+
+impl PeripheralDevicesBackend for EmulatedKeyboard {
+    fn get_current_keyboard_matrix(&self) -> KeyboardMatrix {
+        let now = time::Instant::now();
+
+        if self.current_key_expiration_time.get().unwrap_or(now) <= now {
+            let (duration, keys) = self
+                .key_queue
+                .borrow_mut()
+                .pop_front()
+                .map(|event| (Some(event.duration), event.keys))
+                .unwrap_or((None, Vec::new()));
+
+            self.current_key_expiration_time.set(duration.map(|duration| now + duration));
+            self.current_matrix.replace(keys.into_iter().into())
+        } else {
+            let matrix = self.current_matrix.take();
+            self.current_matrix.set(matrix.clone());
+            return matrix;
+        }
     }
 }

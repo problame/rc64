@@ -1,6 +1,7 @@
 pub mod instr;
 mod mem;
 
+use crate::cia::keyboard::EmulatedKeyboard;
 use crate::interrupt::Interrupt;
 use crate::ram::RAM;
 use crate::utils::R2C;
@@ -18,6 +19,7 @@ pub struct MOS6510 {
     state: State,
     debugger: R2C<Debugger>,
     debugger_ui: R2C<dyn DebuggerUI>,
+    pub keyboard_emulator: R2C<EmulatedKeyboard>,
 }
 
 impl MOS6510 {
@@ -458,6 +460,7 @@ impl MOS6510 {
         ram: Rc<RefCell<RAM>>,
         debugger: R2C<Debugger>,
         debugger_ui: R2C<dyn DebuggerUI>,
+        keyboard_emulator: R2C<EmulatedKeyboard>,
     ) -> Self {
         let mem = MemoryView::new(areas, ram.clone());
         let reg = Regs::default();
@@ -471,6 +474,7 @@ impl MOS6510 {
             },
             debugger,
             debugger_ui,
+            keyboard_emulator,
         }
     }
 
