@@ -481,13 +481,13 @@ impl TimerBackend {
                     other_timer.borrow_mut().step();
                 }
 
-                if let Some(rate) = self.loop_helper.report_rate() {
-                    println!(
-                        "Timer {} underflows / sec = {:.?}",
-                        if let TimerInputMode::A(_) = self.input_mode { "A" } else { "B" },
-                        rate
-                    );
-                }
+                //if let Some(rate) = self.loop_helper.report_rate() {
+                //    println!(
+                //        "Timer {} underflows / sec = {:.?}",
+                //        if let TimerInputMode::A(_) = self.input_mode { "A" } else { "B" },
+                //        rate
+                //    );
+                //}
 
                 self.interrupt_be.borrow_mut().generate(self.input_mode.interrupt_source())
             }
