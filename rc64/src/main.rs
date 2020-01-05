@@ -87,7 +87,7 @@ fn main() {
 
     use spin_sleep::LoopHelper;
 
-    let mut loop_helper = LoopHelper::builder().report_interval_s(0.5).build_with_target_rate(1_000.0f64); // scale by 1000
+    let mut loop_helper = LoopHelper::builder().report_interval_s(1.0).build_with_target_rate(1_000.0f64); // scale by 1000
 
     let mut cycles = 0;
     loop {
@@ -114,7 +114,10 @@ fn main() {
         mpu.cycle(irq, nmi);
 
         if let Some(r) = loop_helper.report_rate() {
-            println!("Mcycles / sec = {:.?}", r / 1_000.0);
+            let r = r / 1_000.0;
+            if r <= 0.95 || r >= 1.05 {
+                println!("Warning: Mcycles / sec = {:.?}", r);
+            }
         }
         if cycles % 1000 == 0 {
             // scale callback by 1000 because our loop is so fast

@@ -419,7 +419,7 @@ impl TimerBackend {
             underflow_action: other_timer,
             interrupt_be,
             loop_helper: spin_sleep::LoopHelper::builder()
-                .report_interval_s(5.0)
+                //.report_interval_s(5.0)
                 .build_without_target_rate(),
         }
     }
