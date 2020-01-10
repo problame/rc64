@@ -862,7 +862,7 @@ impl MOS6510 {
                 let v = args.effective_addr_load.unwrap();
                 args.reg.p.set(Flags::NEG, v & (1<<7) != 0);
                 args.reg.p.set(Flags::OVFL, v & (1<<6) != 0);
-                args.reg.p.set(Flags::ZERO, args.reg.a & v != 0);
+                args.reg.p.set(Flags::ZERO, (args.reg.a & v) == 0);
             }
 
             /***************** Arithmetic ******************/
