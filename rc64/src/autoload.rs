@@ -38,8 +38,42 @@ impl TryFrom<Vec<u8>> for PRG {
 
 impl PRG {
     pub fn write_to_ram(&self, ram: &mut RAM) {
+        /*
+        from vice 3.3 functions autostart_prg_perform_injection and mem_set_basic_text function:
+
+        mem_ram[0x2b] = mem_ram[0xac] = start & 0xff;
+        mem_ram[0x2c] = mem_ram[0xad] = start >> 8;
+        mem_ram[0x2d] = mem_ram[0x2f] = mem_ram[0x31] = mem_ram[0xae] = end & 0xff;
+        mem_ram[0x2e] = mem_ram[0x30] = mem_ram[0x32] = mem_ram[0xaf] = end >> 8;
+
+        => settings just TXTTAB is not sufficient, need to update a few other pointers, too
+        ==> https://www.c64-wiki.com/wiki/Zeropage
+        */
+
+        // end_addr is exclusive end of BASIC TEXT (not the basic ROM, but this PRG) (TXTTAB)
+        let end_addr: u16 = (((self.start_addr as u32) + (self.text.len() as u32)) & 0xffff) as u16;
+        let (end_lo, end_hi) = ((end_addr & 0xff) as u8, (end_addr >> 8) as u8);
+
+        // TXTTAB
         ram.write(0x002b, self.lo);
         ram.write(0x002c, self.hi);
+        // VARTAB
+        ram.write(0x002d, end_lo);
+        ram.write(0x002e, end_hi);
+        // ARYTAB
+        ram.write(0x002f, end_lo);
+        ram.write(0x0030, end_hi);
+        // STREND
+        ram.write(0x0031, end_lo);
+        ram.write(0x0032, end_hi);
+        // "Pointer to the starting address of a load / screen scrolling temporary storage"
+        ram.write(0x00ac, self.lo);
+        ram.write(0x00ad, self.hi);
+        // "Pointer to end address of LOAD/VERIFY/SAVE"
+        ram.write(0x00ae, end_lo);
+        ram.write(0x00af, end_hi);
+
+        // actually load BASIC TEXT
         for (i, b) in self.text.iter().enumerate() {
             ram.write(self.start_addr + (i as u16), *b);
         }
