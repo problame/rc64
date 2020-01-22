@@ -10,6 +10,8 @@ use std::convert::TryFrom;
 pub const SCREEN_WIDTH: usize = 40 * 8;
 pub const SCREEN_HEIGHT: usize = 25 * 8;
 
+pub use self::mem::BankingState;
+
 use num_enum::TryFromPrimitive;
 
 /// https://www.c64-wiki.com/wiki/Color
@@ -85,6 +87,12 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 );
             }
         }
+    }
+}
+
+impl<T> VIC20<T> {
+    pub fn update_banking(&mut self, state: mem::BankingState) {
+        self.mem.banking_state = state;
     }
 }
 

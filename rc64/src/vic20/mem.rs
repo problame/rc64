@@ -107,14 +107,14 @@ lazy_static! {
 }
 
 pub struct MemoryView<T> {
-    pub(super) banking_state: BankingState,
+    pub banking_state: BankingState,
     char_rom: ROM<T>,
     ram: R2C<RAM>,
     color_ram: R2C<ColorRAM>,
 }
 
 #[derive(Clone, Copy, Debug, enum_map::Enum, PartialEq, Eq)]
-pub(super) enum BankingState {
+pub enum BankingState {
     Bank0,
     Bank1,
     Bank2,

@@ -1,7 +1,5 @@
 use crate::cia::keyboard::{KeyboardMatrix, MatrixIndex};
 use crate::utils::R2C;
-use bit_vec::BitVec;
-use std::iter;
 
 use super::backends::*;
 
@@ -76,7 +74,16 @@ impl<T> Register for DataA<T> {
             DataPortBackend::CIA1 { ref mut last_data_a_write, .. } => {
                 *last_data_a_write = val;
             }
-            DataPortBackend::CIA2 { .. } => unimpl!(),
+            DataPortBackend::CIA2 { ref vic, .. } => {
+                use crate::vic20::BankingState::*;
+                vic.borrow_mut().update_banking(match val & 0b0000_00011 {
+                    0b11 => Bank0,
+                    0b10 => Bank1,
+                    0b01 => Bank2,
+                    0b00 => Bank3,
+                    _ => unreachable!("4u8..=u8::MAX have been masked out"),
+                })
+            }
         }
     }
 }
