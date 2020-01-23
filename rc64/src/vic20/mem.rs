@@ -146,6 +146,6 @@ impl<T: AsRef<[u8]>> MemoryView<T> {
 
     fn char_rom_is_mapped(&self) -> bool {
         use BankingState::*;
-        self.banking_state == Bank0 || self.banking_state == Bank1
+        self.banking_state == Bank0 || self.banking_state == Bank2
     }
 }
