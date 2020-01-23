@@ -127,7 +127,7 @@ pub(super) struct Registers {
     pub control_register_1: ControlRegister1,
     pub control_register_2: ControlRegister2,
 
-    pub raster_interrupt_line: u8,
+    pub raster_interrupt_line: usize,
     pub raster_counter: u8,
 
     pub light_pen: Coordinate,
@@ -252,8 +252,24 @@ impl<T> MemoryArea for VIC20<T> {
                 }
             }
             0x10 => self.regs.msbs_of_x_coordinates = val,
-            0x11 => self.regs.control_register_1 = ControlRegister1::from_bits(val).unwrap(),
-            0x12 => self.regs.raster_interrupt_line = val,
+            0x11 => {
+                let mut cr = ControlRegister1::from_bits(val).unwrap();
+
+                let raster_interrupt_line_bit8 =
+                    ((self.regs.control_register_1.contains(ControlRegister1::RST8)) as usize) << 8;
+                self.regs.raster_interrupt_line &= !(raster_interrupt_line_bit8);
+                self.regs.raster_interrupt_line |= raster_interrupt_line_bit8;
+
+                // never commit bit 8 on a write, we track that in raster_interrupt_line
+                // and when reading this cr, we want the read to reflect the current raster line
+                // which is managed by VIC20::inc_y
+                cr.remove(ControlRegister1::RST8);
+                self.regs.control_register_1 = cr;
+            }
+            0x12 => {
+                self.regs.raster_interrupt_line &= !(0xff);
+                self.regs.raster_interrupt_line |= val as usize;
+            }
             0x13 => self.regs.light_pen.x = val,
             0x14 => self.regs.light_pen.y = val,
             0x15 => self.regs.sprite_enabled = val,

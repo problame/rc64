@@ -135,10 +135,10 @@ fn main() {
         }
         cycles += 1;
 
-        let irq = cia1.borrow().cycle();
-        let nmi = cia2.borrow().cycle();
+        let cia_irq = cia1.borrow().cycle();
+        let cia_nmi = cia2.borrow().cycle();
 
-        vic20.borrow_mut().cycle();
+        let vic_irq = vic20.borrow_mut().cycle();
 
         if let Some(autoload_state) = &mut autoload_state {
             autoload_state.cycle();
@@ -149,7 +149,7 @@ fn main() {
             sigint_pending.store(false, std::sync::atomic::Ordering::SeqCst);
             debugger.borrow_mut().break_after_next_decode();
         }
-        mpu.cycle(irq, nmi);
+        mpu.cycle(cia_irq.or(vic_irq), cia_nmi);
 
         if let Some(r) = loop_helper.report_rate() {
             let r = r / 1_000.0;

@@ -42,6 +42,7 @@ impl From<self::mem::U4> for Color {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Point(pub usize, pub usize);
 
 pub trait ScreenBackend {
@@ -65,7 +66,7 @@ pub const HBLANK_RIGHT_PX: isize = 3 * 8;
 // WIDTH=HBLANK_LEFT+VISIBLE+HBLANK_RIGHT
 pub const SCREEN_WIDTH: usize = (HBLANK_LEFT_PX + VISIBLE_HORIZONTAL_PX + HBLANK_RIGHT_PX) as usize;
 
-const MAX_X: isize = (SCREEN_WIDTH as isize) - X_START;
+const MAX_X: isize = (48 / 2 + VISIBLE_HORIZONTAL_PX) + X_START; // FIXME 334 / 343 according to
 const X_START: isize = -(HBLANK_LEFT_PX + 48 / 2);
 
 pub const PIXELS_PER_CYCLE: usize = 8;
@@ -95,16 +96,11 @@ impl<T: AsRef<[u8]>> VIC20<T> {
     }
 
     fn inc_y(&mut self) {
-        let (rst0to7, rst8) = self.regs.raster_counter.overflowing_add(1);
-        assert!(!rst8 || rst0to7 == 0, "Increment cannot overflow by more than one");
-        self.regs.raster_counter = rst0to7;
-        if rst8 {
-            assert!(
-                !self.regs.control_register_1.contains(ControlRegister1::RST8),
-                "RASTER cannot exceed 512"
-            );
-            self.regs.control_register_1.insert(ControlRegister1::RST8)
-        }
+        let mut cur = self.y();
+        assert!(cur < 1 << 9);
+        cur += 1;
+        self.regs.raster_counter = (cur & 0xff) as u8;
+        self.regs.control_register_1.set(ControlRegister1::RST8, (cur & 0x100) != 0);
     }
 
     fn reset_y(&mut self) {
@@ -112,7 +108,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         self.regs.control_register_1.remove(ControlRegister1::RST8);
     }
 
-    pub fn cycle(&mut self) {
+    pub fn cycle(&mut self) -> Option<crate::interrupt::Interrupt> {
         use self::mem::*;
 
         assert_eq!(
@@ -150,7 +146,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             };
 
         let inside_border_zone = self.x >= border_start_x
-            && self.x <= border_end_x
+            && self.x < border_end_x
             && self.y() >= border_start_y
             && self.y() <= border_end_y;
 
@@ -174,7 +170,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 let bm = self.mem.read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
 
                 let fg = Color::try_from(color).unwrap();
-                let bg = Color::try_from(0).unwrap(); // TODO
+                let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
 
                 for px_pos in 0..8 {
                     let bitpos = (8 - px_pos) - 1;
@@ -184,44 +180,32 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 }
             } else if inside_border_zone {
                 for px_pos in 0..8 {
-                    screen.set_px(
-                        Point((self.x - X_START) as usize + px_pos, self.y()),
-                        Color::try_from(self.regs.border_color.bits()).unwrap(),
-                    )
+                    let point = Point((self.x - X_START) as usize + px_pos, self.y());
+                    let border_color = Color::try_from(self.regs.border_color.bits()).unwrap();
+                    screen.set_px(point, border_color)
                 }
             }
         }
 
         self.x += PIXELS_PER_CYCLE as isize;
-        if self.x >= MAX_X {
-            assert_eq!(self.x, MAX_X);
+        if self.x >= 512 + X_START {
+            // assert_eq!(self.x, MAX_X);
             self.x = X_START;
             self.inc_y();
             if self.y() >= SCREEN_HEIGHT {
                 self.reset_y();
-                // TODO Raster Interrupt
+            }
+            if self.y() == self.regs.raster_interrupt_line {
+                self.regs.interrupt_register |= 0b001; // CPU must clear it manually
             }
         }
 
-        // FIXME actual cycle-based impl
-        // We just render the whole video matrix every cycle for now
-        //
-        // for y in 0..SCREEN_HEIGHT {
-        //     let char_row = y / 8;
-        //     for x in (0..SCREEN_WIDTH).step_by(8) {
-        //         let char_col = x / 8;
-        //         let (color, ch) =
-        //             self.mem.read(U14::try_from(0x400 + (char_row * 40 + char_col)).unwrap()).into();
-        //         // find ch in char rom
-        //         let bm = self.mem.read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
-        //         self.screen.borrow_mut().set_char_line(
-        //             Point(x, y),
-        //             Color::try_from(color).unwrap(),
-        //             Color::try_from(0).unwrap(),
-        //             bm,
-        //         );
-        //     }
-        // }
+        // deliver irq if appropriate
+        if self.regs.interrupt_enabled & 0b1111 != 0 {
+            Some(crate::interrupt::Interrupt)
+        } else {
+            None
+        }
     }
 }
 

@@ -1,0 +1,12 @@
+.PHONY: all
+
+all: helloworld.acme.prg rasterbars.acme.prg rasterirq.acme.prg rirqtest.acme.prg
+
+# https://github.com/meonwax/acme
+ACME := ../../acme-cross-assembler/src/acme
+
+%.acme.prg: %.acme.asm
+	$(ACME) -o $@ -f cbm --cpu 6502 $<
+
+clean:
+	rm -f *.prg
