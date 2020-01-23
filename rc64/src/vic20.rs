@@ -1,10 +1,12 @@
 mod mem;
+mod registers;
 
 use self::mem::MemoryView;
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::rom::ROM;
 use crate::utils::R2C;
+use crate::vic20::registers::Registers;
 use std::convert::TryFrom;
 
 pub const SCREEN_WIDTH: usize = 40 * 8;
@@ -51,6 +53,7 @@ pub trait ScreenBackend {
 pub struct VIC20<T> {
     mem: MemoryView<T>,
     screen: R2C<dyn ScreenBackend>,
+    regs: Registers,
 }
 
 impl<T: AsRef<[u8]>> VIC20<T> {
@@ -60,7 +63,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         color_ram: R2C<ColorRAM>,
         screen: R2C<dyn ScreenBackend>,
     ) -> Self {
-        VIC20 { mem: MemoryView::new(char_rom, ram, color_ram), screen }
+        VIC20 { mem: MemoryView::new(char_rom, ram, color_ram), screen, regs: Registers::default() }
     }
 
     pub fn cycle(&mut self) {
@@ -97,19 +100,5 @@ impl<T> VIC20<T> {
 
     pub fn get_banking(&self) -> mem::BankingState {
         self.mem.banking_state
-    }
-}
-
-use super::mos6510::{MemoryArea, WriteResult};
-
-/// These map the VIC20 Control Registers
-impl<T> MemoryArea for VIC20<T> {
-    fn read(&self, _addr: u16) -> u8 {
-        0
-        // unimplemented!()
-    }
-    fn write(&mut self, _addr: u16, _v: u8) -> WriteResult {
-        WriteResult::Wrote
-        // unimplemented!()
     }
 }
