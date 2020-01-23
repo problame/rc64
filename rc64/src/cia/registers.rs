@@ -67,7 +67,18 @@ pub(super) enum Precision {
 /// Bit 7:  Serial bus data input
 impl<T> Register for DataA<T> {
     fn read(&self) -> u8 {
-        unimpl!(0)
+        match *self.0.borrow() {
+            DataPortBackend::CIA1 { .. } => unimpl!(0),
+            DataPortBackend::CIA2 { ref vic, .. } => {
+                use crate::vic20::BankingState::*;
+                match vic.borrow_mut().get_banking() {
+                    Bank0 => 0b11,
+                    Bank1 => 0b10,
+                    Bank2 => 0b01,
+                    Bank3 => 0b00,
+                }
+            }
+        }
     }
     fn write(&self, val: u8) {
         match *self.0.borrow_mut() {

@@ -94,6 +94,10 @@ impl<T> VIC20<T> {
     pub fn update_banking(&mut self, state: mem::BankingState) {
         self.mem.banking_state = state;
     }
+
+    pub fn get_banking(&self) -> mem::BankingState {
+        self.mem.banking_state
+    }
 }
 
 use super::mos6510::{MemoryArea, WriteResult};
