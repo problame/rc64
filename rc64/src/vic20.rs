@@ -2,15 +2,13 @@ mod mem;
 mod registers;
 
 use self::mem::MemoryView;
+use self::registers::{ControlRegister1, ControlRegister2};
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::rom::ROM;
 use crate::utils::R2C;
 use crate::vic20::registers::Registers;
 use std::convert::TryFrom;
-
-pub const SCREEN_WIDTH: usize = 40 * 8;
-pub const SCREEN_HEIGHT: usize = 25 * 8;
 
 pub use self::mem::BankingState;
 
@@ -47,14 +45,34 @@ impl From<self::mem::U4> for Color {
 pub struct Point(pub usize, pub usize);
 
 pub trait ScreenBackend {
-    fn set_char_line(&mut self, p: Point, fg: Color, bg: Color, word: u8);
+    fn set_px(&mut self, p: Point, col: Color);
 }
 
 pub struct VIC20<T> {
     mem: MemoryView<T>,
     screen: R2C<dyn ScreenBackend>,
     regs: Registers,
+    x: isize,
+    // No explicit `y: usize`, stored in VIC-registers, see functions VIC20::{y,inc_y,reset_y}
 }
+
+// 9.5cycles * 8px
+pub const HBLANK_LEFT_PX: isize = 76;
+// BORDER+CONTENT+BORDER
+pub const VISIBLE_HORIZONTAL_PX: isize = 48 + 320 + 36;
+// 3cycles * 8px
+pub const HBLANK_RIGHT_PX: isize = 3 * 8;
+// WIDTH=HBLANK_LEFT+VISIBLE+HBLANK_RIGHT
+pub const SCREEN_WIDTH: usize = (HBLANK_LEFT_PX + VISIBLE_HORIZONTAL_PX + HBLANK_RIGHT_PX) as usize;
+
+const MAX_X: isize = (SCREEN_WIDTH as isize) - X_START;
+const X_START: isize = -(HBLANK_LEFT_PX + 48 / 2);
+
+pub const PIXELS_PER_CYCLE: usize = 8;
+
+pub const VISIBLE_VERTICAL_PX: usize = 284;
+pub const VBLANK_PX: usize = 28;
+pub const SCREEN_HEIGHT: usize = VISIBLE_VERTICAL_PX + VBLANK_PX;
 
 impl<T: AsRef<[u8]>> VIC20<T> {
     pub fn new(
@@ -63,33 +81,147 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         color_ram: R2C<ColorRAM>,
         screen: R2C<dyn ScreenBackend>,
     ) -> Self {
-        VIC20 { mem: MemoryView::new(char_rom, ram, color_ram), screen, regs: Registers::default() }
+        VIC20 {
+            mem: MemoryView::new(char_rom, ram, color_ram),
+            screen,
+            regs: Registers::default(),
+            x: X_START,
+        }
+    }
+
+    fn y(&self) -> usize {
+        (self.regs.raster_counter as usize)
+            | if self.regs.control_register_1.contains(ControlRegister1::RST8) { 0b1_0000_0000 } else { 0 }
+    }
+
+    fn inc_y(&mut self) {
+        let (rst0to7, rst8) = self.regs.raster_counter.overflowing_add(1);
+        assert!(!rst8 || rst0to7 == 0, "Increment cannot overflow by more than one");
+        self.regs.raster_counter = rst0to7;
+        if rst8 {
+            assert!(
+                !self.regs.control_register_1.contains(ControlRegister1::RST8),
+                "RASTER cannot exceed 512"
+            );
+            self.regs.control_register_1.insert(ControlRegister1::RST8)
+        }
+    }
+
+    fn reset_y(&mut self) {
+        self.regs.raster_counter = 0;
+        self.regs.control_register_1.remove(ControlRegister1::RST8);
     }
 
     pub fn cycle(&mut self) {
-        // FIXME actual cycle-based impl
-        // We just render the whole video matrix every cycle for now
-
-        assert_eq!(self.mem.banking_state, self::mem::BankingState::Bank0);
         use self::mem::*;
-        // TODO add border
 
-        for y in 0..SCREEN_HEIGHT {
-            let char_row = y / 8;
-            for x in (0..SCREEN_WIDTH).step_by(8) {
+        assert_eq!(
+            (
+                self.regs.control_register_1.contains(ControlRegister1::BMM),
+                self.regs.control_register_1.contains(ControlRegister1::ECM),
+                self.regs.control_register_2.contains(ControlRegister2::MCM)
+            ),
+            (false, false, false),
+            "Only support standard text mode for now"
+        );
+
+        assert_eq!(VISIBLE_HORIZONTAL_PX, 404);
+        assert_eq!(SCREEN_WIDTH, 504);
+        assert_eq!(SCREEN_WIDTH / PIXELS_PER_CYCLE, 63);
+
+        let border_start_x = X_START + HBLANK_LEFT_PX + 1;
+        let border_end_x = MAX_X - HBLANK_RIGHT_PX;
+
+        let border_start_y = VBLANK_PX;
+        let border_end_y = SCREEN_HEIGHT;
+
+        let (content_start_x, content_end_x) =
+            if self.regs.control_register_2.contains(ControlRegister2::CSEL) {
+                (24, 343)
+            } else {
+                (31, 334)
+            };
+
+        let (content_start_y, content_end_y) =
+            if self.regs.control_register_1.contains(ControlRegister1::RSEL) {
+                (51, 250)
+            } else {
+                (55, 246)
+            };
+
+        let inside_border_zone = self.x >= border_start_x
+            && self.x <= border_end_x
+            && self.y() >= border_start_y
+            && self.y() <= border_end_y;
+
+        let inside_content_zone = self.x >= content_start_x
+            && self.x <= content_end_x
+            && self.y() >= content_start_y
+            && self.y() <= content_end_y;
+
+        {
+            let mut screen = self.screen.borrow_mut();
+            if inside_content_zone {
+                // Coordinate transformation
+                let x = (self.x - content_start_x) as usize;
+                let y = self.y() - content_start_y;
+
+                let char_row = y / 8;
                 let char_col = x / 8;
                 let (color, ch) =
                     self.mem.read(U14::try_from(0x400 + (char_row * 40 + char_col)).unwrap()).into();
                 // find ch in char rom
                 let bm = self.mem.read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
-                self.screen.borrow_mut().set_char_line(
-                    Point(x, y),
-                    Color::try_from(color).unwrap(),
-                    Color::try_from(0).unwrap(),
-                    bm,
-                );
+
+                let fg = Color::try_from(color).unwrap();
+                let bg = Color::try_from(0).unwrap(); // TODO
+
+                for px_pos in 0..8 {
+                    let bitpos = (8 - px_pos) - 1;
+                    let is_fg = bm & (1 << bitpos) != 0;
+                    let color = if is_fg { fg } else { bg };
+                    screen.set_px(Point((self.x - X_START) as usize + px_pos, self.y()), color);
+                }
+            } else if inside_border_zone {
+                for px_pos in 0..8 {
+                    screen.set_px(
+                        Point((self.x - X_START) as usize + px_pos, self.y()),
+                        Color::try_from(self.regs.border_color.bits()).unwrap(),
+                    )
+                }
             }
         }
+
+        self.x += PIXELS_PER_CYCLE as isize;
+        if self.x >= MAX_X {
+            assert_eq!(self.x, MAX_X);
+            self.x = X_START;
+            self.inc_y();
+            if self.y() >= SCREEN_HEIGHT {
+                self.reset_y();
+                // TODO Raster Interrupt
+            }
+        }
+
+        // FIXME actual cycle-based impl
+        // We just render the whole video matrix every cycle for now
+        //
+        // for y in 0..SCREEN_HEIGHT {
+        //     let char_row = y / 8;
+        //     for x in (0..SCREEN_WIDTH).step_by(8) {
+        //         let char_col = x / 8;
+        //         let (color, ch) =
+        //             self.mem.read(U14::try_from(0x400 + (char_row * 40 + char_col)).unwrap()).into();
+        //         // find ch in char rom
+        //         let bm = self.mem.read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
+        //         self.screen.borrow_mut().set_char_line(
+        //             Point(x, y),
+        //             Color::try_from(color).unwrap(),
+        //             Color::try_from(0).unwrap(),
+        //             bm,
+        //         );
+        //     }
+        // }
     }
 }
 

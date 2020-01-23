@@ -43,14 +43,9 @@ impl Minifb {
 }
 
 impl ScreenBackend for Minifb {
-    fn set_char_line(&mut self, p: Point, fg: Color, bg: Color, bm_line: u8) {
+    fn set_px(&mut self, p: Point, col: Color) {
         let mut buf = self.fb_buf.lock();
-        for x_offset in 0..8 {
-            let bitpos = (8 - (x_offset % 8)) - 1;
-            let is_fg = bm_line & (1 << bitpos) != 0;
-            let color = if is_fg { fg } else { bg };
-            buf[p.1 * SCREEN_WIDTH + p.0 + x_offset] = ARGB::from(color).0;
-        }
+        buf[p.1 * SCREEN_WIDTH + p.0] = ARGB::from(col).0;
     }
 }
 

@@ -124,37 +124,41 @@ pub struct Coordinate {
 
 #[derive(Debug, Default)]
 pub(super) struct Registers {
-    control_register_1: ControlRegister1,
-    control_register_2: ControlRegister2,
+    pub control_register_1: ControlRegister1,
+    pub control_register_2: ControlRegister2,
 
-    raster_interrupt_line: u8,
-    raster_counter: u8,
+    pub raster_interrupt_line: u8,
+    pub raster_counter: u8,
 
-    light_pen: Coordinate,
-    memory_pointers: u8,
+    pub light_pen: Coordinate,
+    pub memory_pointers: u8,
 
-    interrupt_register: u8,
-    interrupt_enabled: u8,
+    pub interrupt_register: u8,
+    pub interrupt_enabled: u8,
 
-    coordinate_sprite: [Coordinate; 8],
-    msbs_of_x_coordinates: u8,
-    sprite_enabled: u8,
-    sprite_expansion: Coordinate,
-    sprite_data_priority: u8,
-    sprite_multicolor: u8,
-    sprite_sprite_collision: u8,
-    sprite_data_collision: u8,
-    sprite_multicolors: [u8; 2],
+    pub coordinate_sprite: [Coordinate; 8],
+    pub msbs_of_x_coordinates: u8,
+    pub sprite_enabled: u8,
+    pub sprite_expansion: Coordinate,
+    pub sprite_data_priority: u8,
+    pub sprite_multicolor: u8,
+    pub sprite_sprite_collision: u8,
+    pub sprite_data_collision: u8,
+    pub sprite_multicolors: [u8; 2],
 
-    border_color: u8,
-    background_color: [u8; 4],
-    color_sprite: [u8; 8],
+    pub border_color: BorderColor,
+    pub background_color: [u8; 4],
+    pub color_sprite: [u8; 8],
 }
 
 bitflags! {
     #[derive(Default)]
     pub(super) struct ControlRegister1: u8 {
         const YSCROLL = 0b0_00_00_111;
+        /// RSEL|  Display window height   | First line  | Last line
+        /// ----+--------------------------+-------------+----------
+        ///   0 | 24 text lines/192 pixels |   55 ($37)  | 246 ($f6)
+        ///   1 | 25 text lines/200 pixels |   51 ($33)  | 250 ($fa)
         const RSEL = 0b0_00_01_000;
         const DEN = 0b0_00_10_000;
         /// Bit Map Mode
@@ -169,10 +173,21 @@ bitflags! {
     #[derive(Default)]
     pub(super) struct ControlRegister2: u8 {
         const XSCROLL = 0b00_000_111;
+        /// CSEL|   Display window width   | First X coo. | Last X coo.
+        /// ----+--------------------------+--------------+------------
+        ///   0 | 38 characters/304 pixels |   31 ($1f)   |  334 ($14e)
+        ///   1 | 40 characters/320 pixels |   24 ($18)   |  343 ($157)
         const CSEL = 0b00_001_000;
         /// Multi Color Mode
         const MCM = 0b00_010_000;
         const RES = 0b00_100_000;
+    }
+}
+
+bitflags! {
+    #[derive(Default)]
+    pub(super) struct BorderColor: u8 {
+        const EC = 0b0000_1111;
     }
 }
 
@@ -206,7 +221,7 @@ impl<T> MemoryArea for VIC20<T> {
             0x1d => self.regs.sprite_expansion.x,
             0x1e => self.regs.sprite_sprite_collision,
             0x1f => self.regs.sprite_data_collision,
-            0x20 => self.regs.border_color | 0b1111_0000,
+            0x20 => self.regs.border_color.bits() | 0b1111_0000,
             0x21..=0x24 => self.regs.background_color[addr - 0x21] | 0b1111_0000,
             0x25..=0x26 => self.regs.sprite_multicolors[addr - 0x25] | 0b1111_0000,
             0x27..=0x2e => self.regs.color_sprite[addr - 0x27] | 0b1111_0000,
@@ -252,7 +267,7 @@ impl<T> MemoryArea for VIC20<T> {
             0x1d => self.regs.sprite_expansion.x = val,
             0x1e => self.regs.sprite_sprite_collision = val,
             0x1f => self.regs.sprite_data_collision = val,
-            0x20 => self.regs.border_color = val,
+            0x20 => self.regs.border_color = BorderColor::from_bits_truncate(val),
             0x21..=0x24 => self.regs.background_color[addr - 0x21] = val,
             0x25..=0x26 => self.regs.sprite_multicolors[addr - 0x25] = val,
             0x27..=0x2e => self.regs.color_sprite[addr - 0x27] = val,

@@ -138,11 +138,7 @@ fn main() {
         let irq = cia1.borrow().cycle();
         let nmi = cia2.borrow().cycle();
 
-        let is_vic_cycle = cycles % 100_000 == 0;
-
-        if is_vic_cycle {
-            vic20.borrow_mut().cycle();
-        }
+        vic20.borrow_mut().cycle();
 
         if let Some(autoload_state) = &mut autoload_state {
             autoload_state.cycle();
