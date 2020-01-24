@@ -66,7 +66,7 @@ pub const HBLANK_RIGHT_PX: isize = 3 * 8;
 // WIDTH=HBLANK_LEFT+VISIBLE+HBLANK_RIGHT
 pub const SCREEN_WIDTH: usize = (HBLANK_LEFT_PX + VISIBLE_HORIZONTAL_PX + HBLANK_RIGHT_PX) as usize;
 
-const MAX_X: isize = (48 / 2 + VISIBLE_HORIZONTAL_PX) + X_START; // FIXME 334 / 343 according to
+const MAX_X: isize = SCREEN_WIDTH as isize + X_START;
 const X_START: isize = -(HBLANK_LEFT_PX + 48 / 2);
 
 pub const PIXELS_PER_CYCLE: usize = 8;
