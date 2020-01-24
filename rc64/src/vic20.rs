@@ -3,6 +3,7 @@ mod registers;
 
 use self::mem::MemoryView;
 use self::registers::{ControlRegister1, ControlRegister2};
+use self::mem::U14;
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::rom::ROM;
@@ -109,18 +110,6 @@ impl<T: AsRef<[u8]>> VIC20<T> {
     }
 
     pub fn cycle(&mut self) -> Option<crate::interrupt::Interrupt> {
-        use self::mem::*;
-
-        assert_eq!(
-            (
-                self.regs.control_register_1.contains(ControlRegister1::BMM),
-                self.regs.control_register_1.contains(ControlRegister1::ECM),
-                self.regs.control_register_2.contains(ControlRegister2::MCM)
-            ),
-            (false, false, false),
-            "Only support standard text mode for now"
-        );
-
         assert_eq!(VISIBLE_HORIZONTAL_PX, 404);
         assert_eq!(SCREEN_WIDTH, 504);
         assert_eq!(SCREEN_WIDTH / PIXELS_PER_CYCLE, 63);
@@ -155,6 +144,8 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             && self.y() >= content_start_y
             && self.y() <= content_end_y;
 
+        assert!(!inside_content_zone || inside_border_zone);
+
         {
             let mut screen = self.screen.borrow_mut();
             if inside_content_zone {
@@ -162,21 +153,34 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 let x = (self.x - content_start_x) as usize;
                 let y = self.y() - content_start_y;
 
-                let char_row = y / 8;
-                let char_col = x / 8;
-                let (color, ch) =
-                    self.mem.read(U14::try_from(0x400 + (char_row * 40 + char_col)).unwrap()).into();
-                // find ch in char rom
-                let bm = self.mem.read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
+                match (
+                    self.regs.control_register_1.contains(ControlRegister1::BMM),
+                    self.regs.control_register_1.contains(ControlRegister1::ECM),
+                    self.regs.control_register_2.contains(ControlRegister2::MCM),
+                ) {
+                    (false, false, false) => {
+                        let char_row = y / 8;
+                        let char_col = x / 8;
+                        let (color, ch) = self
+                            .mem
+                            .read(U14::try_from(0x400 + (char_row * 40 + char_col)).unwrap())
+                            .into();
+                        // find ch in char rom
+                        let bm = self
+                            .mem
+                            .read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
 
-                let fg = Color::try_from(color).unwrap();
-                let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
+                        let fg = Color::try_from(color).unwrap();
+                        let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
 
-                for px_pos in 0..8 {
-                    let bitpos = (8 - px_pos) - 1;
-                    let is_fg = bm & (1 << bitpos) != 0;
-                    let color = if is_fg { fg } else { bg };
-                    screen.set_px(Point((self.x - X_START) as usize + px_pos, self.y()), color);
+                        for px_pos in 0..8 {
+                            let bitpos = (8 - px_pos) - 1;
+                            let is_fg = bm & (1 << bitpos) != 0;
+                            let color = if is_fg { fg } else { bg };
+                            screen.set_px(Point((self.x - X_START) as usize + px_pos, self.y()), color);
+                        }
+                    }
+                    _ => unimplemented!("Only support standard text mode for now"),
                 }
             } else if inside_border_zone {
                 for px_pos in 0..8 {
