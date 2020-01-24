@@ -2,8 +2,8 @@ mod mem;
 mod registers;
 
 use self::mem::MemoryView;
-use self::registers::{ControlRegister1, ControlRegister2};
 use self::mem::U14;
+use self::registers::{ControlRegister1, ControlRegister2, InterruptEnabled, InterruptRegister};
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::rom::ROM;
@@ -200,12 +200,14 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 self.reset_y();
             }
             if self.y() == self.regs.raster_interrupt_line {
-                self.regs.interrupt_register |= 0b001; // CPU must clear it manually
+                self.regs.interrupt_register.insert(InterruptRegister::IRST); // CPU must clear it manually
             }
         }
 
         // deliver irq if appropriate
-        if self.regs.interrupt_enabled & 0b1111 != 0 {
+        if self.regs.interrupt_enabled.contains(InterruptEnabled::ERST)
+            && self.regs.interrupt_register.contains(InterruptRegister::IRST)
+        {
             Some(crate::interrupt::Interrupt)
         } else {
             None

@@ -133,8 +133,8 @@ pub(super) struct Registers {
     pub light_pen: Coordinate,
     pub memory_pointers: u8,
 
-    pub interrupt_register: u8,
-    pub interrupt_enabled: u8,
+    pub interrupt_register: InterruptRegister,
+    pub interrupt_enabled: InterruptEnabled,
 
     pub coordinate_sprite: [Coordinate; 8],
     pub msbs_of_x_coordinates: u8,
@@ -191,7 +191,27 @@ bitflags! {
     }
 }
 
-/// These map the VIC20 Control Registers
+bitflags! {
+    #[derive(Default)]
+    pub(super) struct InterruptRegister: u8 {
+        const IRST = 0b0_000_0001;
+        const IMBC = 0b0_000_0010;
+        const IMMC = 0b0_000_0100;
+        const ILP  = 0b0_000_1000;
+        const IRQ  = 0b1_000_0000;
+    }
+}
+
+bitflags! {
+    #[derive(Default)]
+    pub(super) struct InterruptEnabled: u8 {
+        const ERST = 0b0000_0001;
+        const EMBC = 0b0000_0010;
+        const EMMC = 0b0000_0100;
+        const ELP  = 0b0000_1000;
+    }
+}
+
 impl<T> MemoryArea for VIC20<T> {
     fn read(&self, addr: u16) -> u8 {
         let addr = addr as usize & 0xff;
@@ -214,8 +234,8 @@ impl<T> MemoryArea for VIC20<T> {
             0x16 => self.regs.control_register_2.bits() | 0b1100_0000,
             0x17 => self.regs.sprite_expansion.y,
             0x18 => self.regs.memory_pointers | 0b0000_0001,
-            0x19 => self.regs.interrupt_register | 0b0111_0000,
-            0x1a => self.regs.interrupt_enabled | 0b1111_0000,
+            0x19 => self.regs.interrupt_register.bits() | 0b0111_0000,
+            0x1a => self.regs.interrupt_enabled.bits() | 0b1111_0000,
             0x1b => self.regs.sprite_data_priority,
             0x1c => self.regs.sprite_multicolor,
             0x1d => self.regs.sprite_expansion.x,
@@ -276,8 +296,8 @@ impl<T> MemoryArea for VIC20<T> {
             0x16 => self.regs.control_register_2 = ControlRegister2::from_bits_truncate(val),
             0x17 => self.regs.sprite_expansion.y = val,
             0x18 => self.regs.memory_pointers = val,
-            0x19 => self.regs.interrupt_register = val,
-            0x1a => self.regs.interrupt_enabled = val,
+            0x19 => self.regs.interrupt_register = InterruptRegister::from_bits_truncate(val),
+            0x1a => self.regs.interrupt_enabled = InterruptEnabled::from_bits_truncate(val),
             0x1b => self.regs.sprite_data_priority = val,
             0x1c => self.regs.sprite_multicolor = val,
             0x1d => self.regs.sprite_expansion.x = val,
