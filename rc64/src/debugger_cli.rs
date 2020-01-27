@@ -153,8 +153,7 @@ beam on|off             Highlight raster beam position
                         })
                         .unwrap();
                     let addr: u16 = {
-                        let radix =
-                            if pc.to_lowercase().chars().all(|ch| ch.is_numeric()) { 10 } else { 16 };
+                        let radix = 16;
                         match u16::from_str_radix(&pc, radix) {
                             Ok(pc) => pc,
                             Err(e) => {
