@@ -1,0 +1,2 @@
+10 for x=0 to 5 : print x
+20 next
