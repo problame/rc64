@@ -6,7 +6,7 @@ all: helloworld.acme.prg rasterbars.acme.prg rasterirq.acme.prg rirqtest.acme.pr
 ACME := ../../acme-cross-assembler/src/acme
 
 %.acme.prg: %.acme.asm
-	$(ACME) -o $@ -f cbm --cpu 6502 $<
+	$(ACME) -o $@ -f cbm --cpu 6502 --symbollist symbollist.$@ $<
 
 clean:
-	rm -f *.prg
+	rm -f *.prg symbollist.*
