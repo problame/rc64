@@ -27,6 +27,7 @@ use crate::cia::{CIAKind, CIA};
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
 use crate::utils::R2C;
+use crate::vic20::RasterBreakpointBackend;
 
 use std::convert::TryFrom;
 use std::path::PathBuf;
@@ -99,7 +100,7 @@ fn main() {
         MemoryAreaKind::CartRomHi =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
     };
 
-    let debugger = r2c_new!(mos6510::Debugger::default());
+    let debugger = r2c_new!(mos6510::Debugger::new(vic20.clone() as R2C<dyn RasterBreakpointBackend>));
     if args.trap_init {
         debugger.borrow_mut().add_pc_breakpoint(0);
     }
@@ -138,7 +139,7 @@ fn main() {
         let cia_irq = cia1.borrow().cycle();
         let cia_nmi = cia2.borrow().cycle();
 
-        let vic_irq = vic20.borrow_mut().cycle();
+        let vic_irq = vic20.borrow_mut().cycle(mpu.debugger_refmut());
 
         if let Some(autoload_state) = &mut autoload_state {
             autoload_state.cycle();

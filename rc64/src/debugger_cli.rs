@@ -1,5 +1,6 @@
 use crate::cia::keyboard::C64Key;
 use crate::mos6510;
+use crate::vic20::RasterBreakpointBackend;
 use lazy_static::lazy_static;
 use regex::Regex;
 use std::str::FromStr;
@@ -17,7 +18,11 @@ impl Default for DebuggerCli {
 }
 
 impl DebuggerCli {
-    fn do_loop(&mut self, mos: &mos6510::MOS6510) -> Option<mos6510::DebuggerMOSMutation> {
+    fn do_loop(
+        &mut self,
+        mos: &mos6510::MOS6510,
+        vic: &mut dyn RasterBreakpointBackend,
+    ) -> Option<mos6510::DebuggerMOSMutation> {
         let mut is_first_iteration = true;
 
         loop {
@@ -39,8 +44,11 @@ impl DebuggerCli {
             lazy_static! {
                 static ref BREAKPOINT_OP_RE: Regex =
                     Regex::new(r"^([bd])\s+(pc|ea)\s+([\dxXa-fA-F]+)").unwrap();
+                static ref RASTER_BREAKPOINT_OP_RE: Regex =
+                    Regex::new(r"^([bd])\s+rst\s+([\d]+|\*)").unwrap();
             }
             let breakpoint_op = BREAKPOINT_OP_RE.captures(&line);
+            let raster_breakpoint_op = RASTER_BREAKPOINT_OP_RE.captures(&line);
             match line.as_str() {
                 "h" | "help" => println!(
                     r#"commands:
@@ -49,6 +57,8 @@ c                       continue
 b                       show pc & ea breakpoints (hex-encoded)
 b pc|ea HEXADDR         add pc/ea breakpoint add hex-encoded addr
 d pc|ea HEXADDR         del pc/ea breakpoint add hex-encoded addr
+b rst N|*               break when raster beam reaches beginning of line N, N may be '*'
+d rst N|*               delete raster beam breakpoint
 info                    MOS dump
 stack sp                dump stack from sp upward
 stack all               dump entire stack page
@@ -57,6 +67,7 @@ brk on|off              trap to debugger on BRK instr (doesn't affect handling o
 readmem HEXADDR         read memory at address
 inject HEX [HEX [HEX]]  inject raw instruction on next fetch cycle
 exec   HEX [HEX [HEX]]  exe raw instruction now
+press KEY ...           emulate simultaneous press of keys
                     "#
                 ),
                 "c" => {
@@ -115,6 +126,20 @@ exec   HEX [HEX [HEX]]  exe raw instruction now
                         println!("{} breakpoints: {}", name, list.join(", "));
                     }
                     continue;
+                }
+                _ if raster_breakpoint_op.is_some() => {
+                    let (opc, line) = raster_breakpoint_op
+                        .map(|c| (c.get(1).unwrap().as_str(), c.get(2).unwrap().as_str()))
+                        .unwrap();
+
+                    match (opc, usize::from_str(line)) {
+                        ("b", Ok(line)) => vic.add_raster_breakpoint(line),
+                        ("b", Err(_)) if line == "*" => vic.break_on_every_raster_line(true),
+                        ("d", Ok(line)) => vic.remove_raster_breakpoint(line),
+                        ("d", Err(_)) if line == "*" => vic.break_on_every_raster_line(false),
+                        (_, Err(err)) => println!("{}", err),
+                        (_, Ok(_)) => unreachable!(),
+                    }
                 }
                 _ if breakpoint_op.is_some() => {
                     let (opc, ea_or_pc, pc) = breakpoint_op
@@ -285,8 +310,9 @@ impl mos6510::DebuggerUI for DebuggerCli {
         &mut self,
         action: mos6510::DebuggerPostDecodePreApplyCbAction,
         mos: &mos6510::MOS6510,
+        vic: &mut dyn RasterBreakpointBackend,
     ) -> Option<mos6510::DebuggerMOSMutation> {
         assert_eq!(action, mos6510::DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt);
-        self.do_loop(mos)
+        self.do_loop(mos, vic)
     }
 }

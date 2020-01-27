@@ -5,6 +5,8 @@ use crate::cia::keyboard::EmulatedKeyboard;
 use crate::interrupt::Interrupt;
 use crate::ram::RAM;
 use crate::utils::R2C;
+use crate::vic20::RasterBreakpointBackend;
+use crate::vic20::VIC20;
 pub use mem::*;
 use std::cell::RefCell;
 use std::iter::FromIterator;
@@ -322,16 +324,18 @@ pub struct Debugger {
     break_after_next_decode: bool,
     instr_logging_enabled: bool,
     break_on_brk: bool,
+    vic: R2C<dyn RasterBreakpointBackend>,
 }
 
-impl Default for Debugger {
-    fn default() -> Self {
+impl Debugger {
+    pub fn new(vic: R2C<dyn RasterBreakpointBackend>) -> Self {
         Debugger {
             pc_bps: HashSet::default(),
             ea_bps: HashSet::default(),
             break_after_next_decode: false,
             instr_logging_enabled: false,
             break_on_brk: false,
+            vic,
         }
     }
 }
@@ -410,6 +414,7 @@ pub trait DebuggerUI {
         &mut self,
         action: DebuggerPostDecodePreApplyCbAction,
         mos: &MOS6510,
+        vic: &mut dyn RasterBreakpointBackend,
     ) -> Option<DebuggerMOSMutation>;
 }
 
@@ -563,12 +568,14 @@ impl MOS6510 {
 
         // debugger callback
         let action = self.debugger.borrow_mut().post_decode_pre_apply_cb(&self);
+        let vic = self.debugger.borrow_mut().vic.clone();
         debug_assert!(self.debugger.try_borrow().is_ok());
         let mos_mutation = match action {
             DebuggerPostDecodePreApplyCbAction::DoCycle => None,
-            DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt => {
-                self.debugger_ui.borrow_mut().handle_post_decode_pre_apply_action(action, &self)
-            }
+            DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt => self
+                .debugger_ui
+                .borrow_mut()
+                .handle_post_decode_pre_apply_action(action, &self, &mut *vic.borrow_mut()),
         };
 
         // apply debugger action if necessary, may exit early

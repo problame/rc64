@@ -9,6 +9,7 @@ use crate::ram::RAM;
 use crate::rom::ROM;
 use crate::utils::R2C;
 use crate::vic20::registers::Registers;
+use std::collections::HashSet;
 use std::convert::TryFrom;
 
 pub use self::mem::BankingState;
@@ -56,6 +57,8 @@ pub struct VIC20<T> {
     regs: Registers,
     x: isize,
     // No explicit `y: usize`, stored in VIC-registers, see functions VIC20::{y,inc_y,reset_y}
+    raster_breakpoints: HashSet<usize>,
+    raster_break_all: bool,
 }
 
 // 9.5cycles * 8px
@@ -88,6 +91,8 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             screen,
             regs: Registers::default(),
             x: X_START,
+            raster_breakpoints: HashSet::new(),
+            raster_break_all: false,
         }
     }
 
@@ -109,7 +114,10 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         self.regs.control_register_1.remove(ControlRegister1::RST8);
     }
 
-    pub fn cycle(&mut self) -> Option<crate::interrupt::Interrupt> {
+    pub fn cycle(
+        &mut self,
+        mut dbg: std::cell::RefMut<'_, super::mos6510::Debugger>,
+    ) -> Option<crate::interrupt::Interrupt> {
         assert_eq!(VISIBLE_HORIZONTAL_PX, 404);
         assert_eq!(SCREEN_WIDTH, 504);
         assert_eq!(SCREEN_WIDTH / PIXELS_PER_CYCLE, 63);
@@ -205,6 +213,10 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             }
         }
 
+        if self.x == X_START && (self.raster_break_all || self.raster_breakpoints.contains(&self.y())) {
+            dbg.break_after_next_decode();
+        }
+
         // deliver irq if appropriate
         if self.regs.interrupt_enabled.contains(InterruptEnabled::ERST)
             && self.regs.interrupt_register.contains(InterruptRegister::IRST)
@@ -223,5 +235,25 @@ impl<T> VIC20<T> {
 
     pub fn get_banking(&self) -> mem::BankingState {
         self.mem.banking_state
+    }
+}
+
+pub trait RasterBreakpointBackend {
+    fn add_raster_breakpoint(&mut self, line: usize);
+    fn remove_raster_breakpoint(&mut self, line: usize);
+    fn break_on_every_raster_line(&mut self, brk: bool);
+}
+
+impl<T> RasterBreakpointBackend for VIC20<T> {
+    fn add_raster_breakpoint(&mut self, line: usize) {
+        self.raster_breakpoints.insert(line);
+    }
+
+    fn remove_raster_breakpoint(&mut self, line: usize) {
+        self.raster_breakpoints.remove(&line);
+    }
+
+    fn break_on_every_raster_line(&mut self, brk: bool) {
+        self.raster_break_all = brk;
     }
 }
