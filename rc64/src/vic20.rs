@@ -193,10 +193,11 @@ impl<T: AsRef<[u8]>> VIC20<T> {
 
         self.x += PIXELS_PER_CYCLE as isize;
         if self.x >= 512 + X_START {
-            // assert_eq!(self.x, MAX_X);
+            assert_eq!(self.x, 512 + X_START);
             self.x = X_START;
             self.inc_y();
-            if self.y() >= SCREEN_HEIGHT {
+            if self.y() >= SCREEN_HEIGHT - 1 {
+                assert_eq!(self.y(), SCREEN_HEIGHT - 1);
                 self.reset_y();
             }
             if self.y() == self.regs.raster_interrupt_line {
