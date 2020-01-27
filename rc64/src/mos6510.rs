@@ -780,282 +780,282 @@ impl MOS6510 {
         #[gen_instr_match]
         fn instr_match(mut args: InstrMatchArgs) {
             match args.instr {
-            // Sources http://www.obelisk.me.uk/6502/instructions.html
-            //         https://www.masswerk.at/6502/6502_instruction_set.html
+                // Sources http://www.obelisk.me.uk/6502/instructions.html
+                //         https://www.masswerk.at/6502/6502_instruction_set.html
 
-            /***************** Load/Store Operations ******************/
-            // LDA 	Load Accumulator 	N,Z
-            Instr(LDA, Imm(i)) => args.reg.lda(i),
-            mi!(LDA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.effective_addr_load.unwrap()),
-            // LDX 	Load X Register 	N,Z
-            Instr(LDX, Imm(i)) => args.reg.ldx(i),
-            mi!(LDX, Zpi, ZpY, Abs, AbY) => args.reg.ldx(args.effective_addr_load.unwrap()),
-            // LDY 	Load Y Register 	N,Z
-            Instr(LDY, Imm(i)) => args.reg.ldy(i),
-            mi!(LDY, Zpi, ZpX, Abs, AbX) => args.reg.ldy(args.effective_addr_load.unwrap()),
-            // STA 	Store Accumulator
-            mi!(STA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.mem.write(args.effective_addr.unwrap(), args.reg.a),
-            // STX 	Store X Register
-            mi!(STX, Zpi, ZpY, Abs) => args.mem.write(args.effective_addr.unwrap(), args.reg.x),
-            // STY 	Store Y Register
-            mi!(STY, Zpi, ZpX, Abs) => args.mem.write(args.effective_addr.unwrap(), args.reg.y),
+                /***************** Load/Store Operations ******************/
+                // LDA 	Load Accumulator 	N,Z
+                Instr(LDA, Imm(i)) => args.reg.lda(i),
+                mi!(LDA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.effective_addr_load.unwrap()),
+                // LDX 	Load X Register 	N,Z
+                Instr(LDX, Imm(i)) => args.reg.ldx(i),
+                mi!(LDX, Zpi, ZpY, Abs, AbY) => args.reg.ldx(args.effective_addr_load.unwrap()),
+                // LDY 	Load Y Register 	N,Z
+                Instr(LDY, Imm(i)) => args.reg.ldy(i),
+                mi!(LDY, Zpi, ZpX, Abs, AbX) => args.reg.ldy(args.effective_addr_load.unwrap()),
+                // STA 	Store Accumulator
+                mi!(STA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.mem.write(args.effective_addr.unwrap(), args.reg.a),
+                // STX 	Store X Register
+                mi!(STX, Zpi, ZpY, Abs) => args.mem.write(args.effective_addr.unwrap(), args.reg.x),
+                // STY 	Store Y Register
+                mi!(STY, Zpi, ZpX, Abs) => args.mem.write(args.effective_addr.unwrap(), args.reg.y),
 
-            /***************** Register Transfers ******************/
-            // The contents of the X and Y registers can be moved to or from the accumulator, setting the negative (N) and zero (Z) flags as appropriate.
+                /***************** Register Transfers ******************/
+                // The contents of the X and Y registers can be moved to or from the accumulator, setting the negative (N) and zero (Z) flags as appropriate.
 
-            // TAX 	Transfer accumulator to X 	N,Z
-            Instr(TAX, Imp) => args.reg.ldx(args.reg.a),
-            // TAY 	Transfer accumulator to Y 	N,Z
-            Instr(TAY, Imp) => args.reg.ldy(args.reg.a),
-            // TXA 	Transfer X to accumulator 	N,Z
-            Instr(TXA, Imp) => args.reg.lda(args.reg.x),
-            // TYA 	Transfer Y to accumulator 	N,Z
-            Instr(TYA, Imp) => args.reg.lda(args.reg.y),
+                // TAX 	Transfer accumulator to X 	N,Z
+                Instr(TAX, Imp) => args.reg.ldx(args.reg.a),
+                // TAY 	Transfer accumulator to Y 	N,Z
+                Instr(TAY, Imp) => args.reg.ldy(args.reg.a),
+                // TXA 	Transfer X to accumulator 	N,Z
+                Instr(TXA, Imp) => args.reg.lda(args.reg.x),
+                // TYA 	Transfer Y to accumulator 	N,Z
+                Instr(TYA, Imp) => args.reg.lda(args.reg.y),
 
-            /***************** Stack Operations ******************/
-            // The 6502 microprocessor supports a 256 byte stack fixed between memory locations $0100 and $01FF.
-            // A special 8-bit register, S, is used to keep track of the NEXT FREE BYTE of stack space.
-            // Pushing a byte on to the stack causes the value to be stored at the current free location (e.g. $0100,S)
-            // AND THEN the stack pointer is post decremented. Pull operations reverse this procedure.
-            //
-            // The stack register can only be accessed by transferring its value to or from the X register.
-            //
-            // Its value is automatically modified by push/pull instructions, subroutine calls and returns,
-            // interrupts and returns from interrupts.
+                /***************** Stack Operations ******************/
+                // The 6502 microprocessor supports a 256 byte stack fixed between memory locations $0100 and $01FF.
+                // A special 8-bit register, S, is used to keep track of the NEXT FREE BYTE of stack space.
+                // Pushing a byte on to the stack causes the value to be stored at the current free location (e.g. $0100,S)
+                // AND THEN the stack pointer is post decremented. Pull operations reverse this procedure.
+                //
+                // The stack register can only be accessed by transferring its value to or from the X register.
+                //
+                // Its value is automatically modified by push/pull instructions, subroutine calls and returns,
+                // interrupts and returns from interrupts.
 
-            // TSX 	Transfer stack pointer to X 	N,Z
-            Instr(TSX, Imp) => args.reg.ldx(args.reg.sp),
-            // TXS 	Transfer X to stack pointer
-            Instr(TXS, Imp) => args.reg.sp = args.reg.x,
-            // PHA 	Push accumulator on stack
-            Instr(PHA, Imp) => {
-                args.push(args.reg.a)
-            },
-            // PHP 	Push processor status on stack
-            Instr(PHP, Imp) => {
-                args.push(args.reg.p.bits())
-            },
-            // PLA 	Pull accumulator from stack 	N,Z
-            Instr(PLA, Imp) => {
-                let acc = args.pull();
-                args.reg.lda(acc)
-            }
-            // PLP 	Pull processor status from stack 	All
-            Instr(PLP, Imp) => {
-                match Flags::from_bits(args.pull()) {
-                    Some(p) => args.reg.p = p,
-                    None => unimplemented!(), // TODO processor behavior if unused bit is set?
+                // TSX 	Transfer stack pointer to X 	N,Z
+                Instr(TSX, Imp) => args.reg.ldx(args.reg.sp),
+                // TXS 	Transfer X to stack pointer
+                Instr(TXS, Imp) => args.reg.sp = args.reg.x,
+                // PHA 	Push accumulator on stack
+                Instr(PHA, Imp) => {
+                    args.push(args.reg.a)
+                },
+                // PHP 	Push processor status on stack
+                Instr(PHP, Imp) => {
+                    args.push(args.reg.p.bits())
+                },
+                // PLA 	Pull accumulator from stack 	N,Z
+                Instr(PLA, Imp) => {
+                    let acc = args.pull();
+                    args.reg.lda(acc)
                 }
+                // PLP 	Pull processor status from stack 	All
+                Instr(PLP, Imp) => {
+                    match Flags::from_bits(args.pull()) {
+                        Some(p) => args.reg.p = p,
+                        None => unimplemented!(), // TODO processor behavior if unused bit is set?
+                    }
+                }
+
+                /***************** Logical ******************/
+
+                // The following instructions perform logical operations on the contents of the
+                // accumulator and another value held in memory. The BIT instruction performs a
+                // logical AND to test the presence of bits in the memory value to set the flags but
+                // does not keep the result.
+
+                // AND 	Logical AND 	N,Z
+                Instr(AND, Imm(i)) => args.reg.lda(args.reg.a & i),
+                mi!(AND, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.reg.a & args.effective_addr_load.unwrap()),
+                // EOR 	Exclusive OR 	N,Z
+                Instr(EOR, Imm(i)) => args.reg.lda(args.reg.a ^ i),
+                mi!(EOR, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.reg.a ^ args.effective_addr_load.unwrap()),
+                // ORA 	Logical Inclusive OR 	N,Z
+                Instr(ORA, Imm(i)) => args.reg.lda(args.reg.a | i),
+                mi!(ORA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.reg.a | args.effective_addr_load.unwrap()),
+                // BIT 	Bit Test 	N,V,Z
+                mi!(BIT, Zpi, Abs) => {
+                    let v = args.effective_addr_load.unwrap();
+                    args.reg.p.set(Flags::NEG, v & (1<<7) != 0);
+                    args.reg.p.set(Flags::OVFL, v & (1<<6) != 0);
+                    args.reg.p.set(Flags::ZERO, (args.reg.a & v) == 0);
+                }
+
+                /***************** Arithmetic ******************/
+                // The arithmetic operations perform addition and subtraction on the contents of the accumulator.
+                // The compare operations allow the comparison of the accumulator and X or Y with memory values.
+
+                // ADC 	Add with Carry 	N,V,Z,C
+                Instr(ADC, Imm(i)) => args.reg.add_to_a_with_carry_and_set_carry(i),
+                mi!(ADC, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.add_to_a_with_carry_and_set_carry(args.effective_addr_load.unwrap()),
+                // SBC 	Subtract with Carry 	N,V,Z,C
+                Instr(SBC, Imm(i)) => args.reg.sub_from_a_with_carry_and_set_carry(i),
+                mi!(SBC, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.sub_from_a_with_carry_and_set_carry(args.effective_addr_load.unwrap()),
+                // CMP 	Compare accumulator 	N,Z,C
+                Instr(CMP, Imm(i)) => args.reg.cmp_a(i),
+                mi!(CMP, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.cmp_a(args.effective_addr_load.unwrap()),
+                // CPX 	Compare X register 	N,Z,C
+                Instr(CPX, Imm(i)) => args.reg.cmp_x(i),
+                mi!(CPX, Zpi, Abs) => args.reg.cmp_x(args.effective_addr_load.unwrap()),
+                // CPY 	Compare Y register 	N,Z,C
+                Instr(CPY, Imm(i)) => args.reg.cmp_y(i),
+                mi!(CPY, Zpi, Abs) => args.reg.cmp_y(args.effective_addr_load.unwrap()),
+
+                /***************** Increments & Decrements ******************/
+                // Increment or decrement a memory location or one of the X or Y registers by one setting
+                // the negative (N) and zero (Z) flags as appropriate,
+
+                // INC 	Increment a memory location 	N,Z
+                mi!(INC, Zpi, ZpX, Abs, AbX) => {
+                    let res = args.effective_addr_load.unwrap().overflowing_add(1).0;
+                    args.mem.write(args.effective_addr.unwrap(), res);
+                    args.reg.set_nz_flags(res);
+                }
+                // DEC 	Decrement a memory location 	N,Z
+                mi!(DEC, Zpi, ZpX, Abs, AbX) => {
+                    let res = args.effective_addr_load.unwrap().overflowing_sub(1).0;
+                    args.mem.write(args.effective_addr.unwrap(), res);
+                    args.reg.set_nz_flags(res);
+                }
+                // INX 	Increment the X register 	N,Z
+                Instr(INX, Imp) => args.reg.ldx(args.reg.x.overflowing_add(1).0),
+                // INY 	Increment the Y register 	N,Z
+                Instr(INY, Imp) => args.reg.ldy(args.reg.y.overflowing_add(1).0),
+                // DEX 	Decrement the X register 	N,Z
+                Instr(DEX, Imp) => args.reg.ldx(args.reg.x.overflowing_sub(1).0),
+                // DEY 	Decrement the Y register 	N,Z
+                Instr(DEY, Imp) => args.reg.ldy(args.reg.y.overflowing_sub(1).0),
+
+                /***************** Shifts ******************/
+                // Shift instructions cause the bits within either a memory location or the accumulator to be
+                // shifted by one bit position. The rotate instructions use the contents if the carry flag (C)
+                // to fill the vacant position generated by the shift and to catch the overflowing bit.
+                // The arithmetic and logical shifts shift in an appropriate 0 or 1 bit as appropriate but catch
+                // the overflow bit in the carry flag (C).
+
+                // ASL 	Arithmetic Shift Left 	N,Z,C
+                Instr(ASL, Imp) => {
+                    let (carry, v) = MOS6510::asl(args.reg.a);
+                    args.reg.lda(v);
+                    args.reg.set_nzc_flags(v, carry);
+                },
+                mi!(ASL, Zpi, ZpX, Abs, AbX) => {
+                    let (carry, v) = MOS6510::asl(args.effective_addr_load.unwrap());
+                    args.mem.write(args.effective_addr.unwrap(), v);
+                    args.reg.set_nzc_flags(v, carry);
+                },
+                // LSR 	Logical Shift Right 	N,Z,C
+                Instr(LSR, Imp) => {
+                    let (carry, v) = MOS6510::lsr(args.reg.a);
+                    args.reg.lda(v);
+                    args.reg.set_nzc_flags(v, carry);
+                    args.reg.p.set(Flags::NEG, false);
+                },
+                mi!(LSR, Zpi, ZpX, Abs, AbX) => {
+                    let (carry, v) = MOS6510::lsr(args.effective_addr_load.unwrap());
+                    args.mem.write(args.effective_addr.unwrap(), v);
+                    args.reg.set_nzc_flags(v, carry);
+                    args.reg.p.set(Flags::NEG, false);
+                },
+                // ROL 	Rotate Left 	N,Z,C
+                Instr(ROL, Imp) => {
+                    let (carry, res) = MOS6510::rol(args.reg.a, args.reg.p.contains(Flags::CARRY));
+                    args.reg.lda(res);
+                    args.reg.set_nzc_flags(res, carry);
+                }
+                mi!(ROL, Zpi, ZpX, Abs, AbX) => {
+                    let (carry, res) = MOS6510::rol(args.effective_addr_load.unwrap(), args.reg.p.contains(Flags::CARRY));
+                    args.mem.write(args.effective_addr.unwrap(), res);
+                    args.reg.set_nzc_flags(res, carry);
+                }
+                // ROR 	Rotate Right 	N,Z,C
+                Instr(ROR, Imp) => {
+                    let (carry, res) = MOS6510::ror(args.reg.a, args.reg.p.contains(Flags::CARRY));
+                    args.reg.lda(res);
+                    args.reg.set_nzc_flags(res, carry);
+                }
+                mi!(ROR, Zpi, ZpX, Abs, AbX) => {
+                    let (carry, res) = MOS6510::ror(args.effective_addr_load.unwrap(), args.reg.p.contains(Flags::CARRY));
+                    args.mem.write(args.effective_addr.unwrap(), res);
+                    args.reg.set_nzc_flags(res, carry);
+                }
+
+                /***************** Jumps & Calls ******************/
+                // The following instructions modify the program counter causing a break to normal sequential execution.
+                // The JSR instruction pushes the old PC onto the stack before changing it to the new location allowing
+                // a subsequent RTS to return execution to the instruction after the call.
+
+                // JMP 	Jump to another location
+                Instr(JMP, Ind(a)) => *args.next_pc = Some(args.mem.read_u16(a)),
+                Instr(JMP, Abs(a)) => *args.next_pc = Some(a),
+                // JSR 	Jump to a subroutine
+                Instr(JSR, Abs(a)) => {
+                    args.push_u16(args.next_pc.unwrap() - 1);
+                    *args.next_pc = Some(a);
+                }
+                // RTS 	Return from subroutine
+                Instr(RTS, Imp) => {
+                    *args.next_pc = Some(args.pull_u16().overflowing_add(1).0);
+                }
+
+                /***************** Branches ******************/
+                // Branch instructions break the normal sequential flow of execution by changing the program counter
+                // if a specified condition is met. All the conditions are based on examining a single bit within the
+                // processor status.
+
+                // BCC 	Branch if carry flag clear
+                Instr(BCC, PCr(o)) => branch!(CARRY == 0, o, args),
+                // BCS 	Branch if carry flag set
+                Instr(BCS, PCr(o)) => branch!(CARRY == 1, o, args),
+                // BEQ 	Branch if zero flag set
+                Instr(BEQ, PCr(o)) => branch!(ZERO == 1, o, args),
+                // BMI 	Branch if negative flag set
+                Instr(BMI, PCr(o)) => branch!(NEG == 1, o, args),
+                // BNE 	Branch if zero flag clear
+                Instr(BNE, PCr(o)) => branch!(ZERO == 0, o, args),
+                // BPL 	Branch if negative flag clear
+                Instr(BPL, PCr(o)) => branch!(NEG == 0, o, args),
+                // BVC 	Branch if overflow flag clear
+                Instr(BVC, PCr(o)) => branch!(OVFL == 0, o, args),
+                // BVS 	Branch if overflow flag set
+                Instr(BVS, PCr(o)) => branch!(OVFL == 1, o, args),
+
+                /***************** Status Flag Changes ******************/
+                // The following instructions change the values of specific status flags.
+
+                // CLC 	Clear carry flag 	C
+                Instr(CLC, Imp) => args.reg.p.set(Flags::CARRY, false),
+                // CLD 	Clear decimal mode flag 	D
+                Instr(CLD, Imp) => args.reg.p.set(Flags::DEC, false),
+                // CLI 	Clear interrupt disable flag 	I
+                Instr(CLI, Imp) => args.reg.p.set(Flags::IRQD, false),
+                // CLV 	Clear overflow flag 	V
+                Instr(CLV, Imp) => args.reg.p.set(Flags::OVFL, false),
+                // SEC 	Set carry flag 	C
+                Instr(SEC, Imp) => args.reg.p.set(Flags::CARRY, true),
+                // SED 	Set decimal mode flag 	D
+                Instr(SED, Imp) => args.reg.p.set(Flags::DEC, true),
+                // SEI 	Set interrupt disable flag 	I
+                Instr(SEI, Imp) => args.reg.p.set(Flags::IRQD, true),
+
+                /***************** System Functions ******************/
+                // The remaining instructions perform useful but rarely used functions.
+
+                // BRK 	Force an interrupt 	B
+                Instr(BRK, Imp) => {
+                    unimplemented!();
+                    args.push_u16(args.reg.pc);
+                    args.push(args.reg.p.bits());
+
+                    args.reg.p.set(Flags::BRK, true);
+                    *args.next_pc = Some(args.mem.read_u16(ResetVec::IRQ as u16));
+                },
+                // NOP 	No Operation
+                Instr(NOP, Imp) => (),
+                // RTI 	Return from Interrupt 	All
+                Instr(RTI, Imp) => {
+                    args.reg.p = match Flags::from_bits(args.pull()) {
+                        Some(f) => f,
+                        None => unimplemented!(), // TODO (behaviorwith unset bits?)
+                    };
+                    *args.next_pc = Some(args.pull_u16());
+                    // restore of p implicitly resets BRK
+                },
+
+
+                _ => panic!("unimplemented instruction: {}", args.instr),
             }
-
-            /***************** Logical ******************/
-
-            // The following instructions perform logical operations on the contents of the
-            // accumulator and another value held in memory. The BIT instruction performs a
-            // logical AND to test the presence of bits in the memory value to set the flags but
-            // does not keep the result.
-
-            // AND 	Logical AND 	N,Z
-            Instr(AND, Imm(i)) => args.reg.lda(args.reg.a & i),
-            mi!(AND, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.reg.a & args.effective_addr_load.unwrap()),
-            // EOR 	Exclusive OR 	N,Z
-            Instr(EOR, Imm(i)) => args.reg.lda(args.reg.a ^ i),
-            mi!(EOR, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.reg.a ^ args.effective_addr_load.unwrap()),
-            // ORA 	Logical Inclusive OR 	N,Z
-            Instr(ORA, Imm(i)) => args.reg.lda(args.reg.a | i),
-            mi!(ORA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.reg.a | args.effective_addr_load.unwrap()),
-            // BIT 	Bit Test 	N,V,Z
-            mi!(BIT, Zpi, Abs) => {
-                let v = args.effective_addr_load.unwrap();
-                args.reg.p.set(Flags::NEG, v & (1<<7) != 0);
-                args.reg.p.set(Flags::OVFL, v & (1<<6) != 0);
-                args.reg.p.set(Flags::ZERO, (args.reg.a & v) == 0);
-            }
-
-            /***************** Arithmetic ******************/
-            // The arithmetic operations perform addition and subtraction on the contents of the accumulator.
-            // The compare operations allow the comparison of the accumulator and X or Y with memory values.
-
-            // ADC 	Add with Carry 	N,V,Z,C
-            Instr(ADC, Imm(i)) => args.reg.add_to_a_with_carry_and_set_carry(i),
-            mi!(ADC, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.add_to_a_with_carry_and_set_carry(args.effective_addr_load.unwrap()),
-            // SBC 	Subtract with Carry 	N,V,Z,C
-            Instr(SBC, Imm(i)) => args.reg.sub_from_a_with_carry_and_set_carry(i),
-            mi!(SBC, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.sub_from_a_with_carry_and_set_carry(args.effective_addr_load.unwrap()),
-            // CMP 	Compare accumulator 	N,Z,C
-            Instr(CMP, Imm(i)) => args.reg.cmp_a(i),
-            mi!(CMP, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.cmp_a(args.effective_addr_load.unwrap()),
-            // CPX 	Compare X register 	N,Z,C
-            Instr(CPX, Imm(i)) => args.reg.cmp_x(i),
-            mi!(CPX, Zpi, Abs) => args.reg.cmp_x(args.effective_addr_load.unwrap()),
-            // CPY 	Compare Y register 	N,Z,C
-            Instr(CPY, Imm(i)) => args.reg.cmp_y(i),
-            mi!(CPY, Zpi, Abs) => args.reg.cmp_y(args.effective_addr_load.unwrap()),
-
-            /***************** Increments & Decrements ******************/
-            // Increment or decrement a memory location or one of the X or Y registers by one setting
-            // the negative (N) and zero (Z) flags as appropriate,
-
-            // INC 	Increment a memory location 	N,Z
-            mi!(INC, Zpi, ZpX, Abs, AbX) => {
-                let res = args.effective_addr_load.unwrap().overflowing_add(1).0;
-                args.mem.write(args.effective_addr.unwrap(), res);
-                args.reg.set_nz_flags(res);
-            }
-            // DEC 	Decrement a memory location 	N,Z
-            mi!(DEC, Zpi, ZpX, Abs, AbX) => {
-                let res = args.effective_addr_load.unwrap().overflowing_sub(1).0;
-                args.mem.write(args.effective_addr.unwrap(), res);
-                args.reg.set_nz_flags(res);
-            }
-            // INX 	Increment the X register 	N,Z
-            Instr(INX, Imp) => args.reg.ldx(args.reg.x.overflowing_add(1).0),
-            // INY 	Increment the Y register 	N,Z
-            Instr(INY, Imp) => args.reg.ldy(args.reg.y.overflowing_add(1).0),
-            // DEX 	Decrement the X register 	N,Z
-            Instr(DEX, Imp) => args.reg.ldx(args.reg.x.overflowing_sub(1).0),
-            // DEY 	Decrement the Y register 	N,Z
-            Instr(DEY, Imp) => args.reg.ldy(args.reg.y.overflowing_sub(1).0),
-
-            /***************** Shifts ******************/
-            // Shift instructions cause the bits within either a memory location or the accumulator to be
-            // shifted by one bit position. The rotate instructions use the contents if the carry flag (C)
-            // to fill the vacant position generated by the shift and to catch the overflowing bit.
-            // The arithmetic and logical shifts shift in an appropriate 0 or 1 bit as appropriate but catch
-            // the overflow bit in the carry flag (C).
-
-            // ASL 	Arithmetic Shift Left 	N,Z,C
-            Instr(ASL, Imp) => {
-                let (carry, v) = MOS6510::asl(args.reg.a);
-                args.reg.lda(v);
-                args.reg.set_nzc_flags(v, carry);
-            },
-            mi!(ASL, Zpi, ZpX, Abs, AbX) => {
-                let (carry, v) = MOS6510::asl(args.effective_addr_load.unwrap());
-                args.mem.write(args.effective_addr.unwrap(), v);
-                args.reg.set_nzc_flags(v, carry);
-            },
-            // LSR 	Logical Shift Right 	N,Z,C
-            Instr(LSR, Imp) => {
-                let (carry, v) = MOS6510::lsr(args.reg.a);
-                args.reg.lda(v);
-                args.reg.set_nzc_flags(v, carry);
-                args.reg.p.set(Flags::NEG, false);
-            },
-            mi!(LSR, Zpi, ZpX, Abs, AbX) => {
-                let (carry, v) = MOS6510::lsr(args.effective_addr_load.unwrap());
-                args.mem.write(args.effective_addr.unwrap(), v);
-                args.reg.set_nzc_flags(v, carry);
-                args.reg.p.set(Flags::NEG, false);
-            },
-            // ROL 	Rotate Left 	N,Z,C
-            Instr(ROL, Imp) => {
-                let (carry, res) = MOS6510::rol(args.reg.a, args.reg.p.contains(Flags::CARRY));
-                args.reg.lda(res);
-                args.reg.set_nzc_flags(res, carry);
-            }
-            mi!(ROL, Zpi, ZpX, Abs, AbX) => {
-                let (carry, res) = MOS6510::rol(args.effective_addr_load.unwrap(), args.reg.p.contains(Flags::CARRY));
-                args.mem.write(args.effective_addr.unwrap(), res);
-                args.reg.set_nzc_flags(res, carry);
-            }
-            // ROR 	Rotate Right 	N,Z,C
-            Instr(ROR, Imp) => {
-                let (carry, res) = MOS6510::ror(args.reg.a, args.reg.p.contains(Flags::CARRY));
-                args.reg.lda(res);
-                args.reg.set_nzc_flags(res, carry);
-            }
-            mi!(ROR, Zpi, ZpX, Abs, AbX) => {
-                let (carry, res) = MOS6510::ror(args.effective_addr_load.unwrap(), args.reg.p.contains(Flags::CARRY));
-                args.mem.write(args.effective_addr.unwrap(), res);
-                args.reg.set_nzc_flags(res, carry);
-            }
-
-            /***************** Jumps & Calls ******************/
-            // The following instructions modify the program counter causing a break to normal sequential execution.
-            // The JSR instruction pushes the old PC onto the stack before changing it to the new location allowing
-            // a subsequent RTS to return execution to the instruction after the call.
-
-            // JMP 	Jump to another location
-            Instr(JMP, Ind(a)) => *args.next_pc = Some(args.mem.read_u16(a)),
-            Instr(JMP, Abs(a)) => *args.next_pc = Some(a),
-            // JSR 	Jump to a subroutine
-            Instr(JSR, Abs(a)) => {
-                args.push_u16(args.next_pc.unwrap() - 1);
-                *args.next_pc = Some(a);
-            }
-            // RTS 	Return from subroutine
-            Instr(RTS, Imp) => {
-                *args.next_pc = Some(args.pull_u16().overflowing_add(1).0);
-            }
-
-            /***************** Branches ******************/
-            // Branch instructions break the normal sequential flow of execution by changing the program counter
-            // if a specified condition is met. All the conditions are based on examining a single bit within the
-            // processor status.
-
-            // BCC 	Branch if carry flag clear
-            Instr(BCC, PCr(o)) => branch!(CARRY == 0, o, args),
-            // BCS 	Branch if carry flag set
-            Instr(BCS, PCr(o)) => branch!(CARRY == 1, o, args),
-            // BEQ 	Branch if zero flag set
-            Instr(BEQ, PCr(o)) => branch!(ZERO == 1, o, args),
-            // BMI 	Branch if negative flag set
-            Instr(BMI, PCr(o)) => branch!(NEG == 1, o, args),
-            // BNE 	Branch if zero flag clear
-            Instr(BNE, PCr(o)) => branch!(ZERO == 0, o, args),
-            // BPL 	Branch if negative flag clear
-            Instr(BPL, PCr(o)) => branch!(NEG == 0, o, args),
-            // BVC 	Branch if overflow flag clear
-            Instr(BVC, PCr(o)) => branch!(OVFL == 0, o, args),
-            // BVS 	Branch if overflow flag set
-            Instr(BVS, PCr(o)) => branch!(OVFL == 1, o, args),
-
-            /***************** Status Flag Changes ******************/
-            // The following instructions change the values of specific status flags.
-
-            // CLC 	Clear carry flag 	C
-            Instr(CLC, Imp) => args.reg.p.set(Flags::CARRY, false),
-            // CLD 	Clear decimal mode flag 	D
-            Instr(CLD, Imp) => args.reg.p.set(Flags::DEC, false),
-            // CLI 	Clear interrupt disable flag 	I
-            Instr(CLI, Imp) => args.reg.p.set(Flags::IRQD, false),
-            // CLV 	Clear overflow flag 	V
-            Instr(CLV, Imp) => args.reg.p.set(Flags::OVFL, false),
-            // SEC 	Set carry flag 	C
-            Instr(SEC, Imp) => args.reg.p.set(Flags::CARRY, true),
-            // SED 	Set decimal mode flag 	D
-            Instr(SED, Imp) => args.reg.p.set(Flags::DEC, true),
-            // SEI 	Set interrupt disable flag 	I
-            Instr(SEI, Imp) => args.reg.p.set(Flags::IRQD, true),
-
-            /***************** System Functions ******************/
-            // The remaining instructions perform useful but rarely used functions.
-
-            // BRK 	Force an interrupt 	B
-            Instr(BRK, Imp) => {
-                unimplemented!();
-                args.push_u16(args.reg.pc);
-                args.push(args.reg.p.bits());
-
-                args.reg.p.set(Flags::BRK, true);
-                *args.next_pc = Some(args.mem.read_u16(ResetVec::IRQ as u16));
-            },
-            // NOP 	No Operation
-            Instr(NOP, Imp) => (),
-            // RTI 	Return from Interrupt 	All
-            Instr(RTI, Imp) => {
-                args.reg.p = match Flags::from_bits(args.pull()) {
-                    Some(f) => f,
-                    None => unimplemented!(), // TODO (behaviorwith unset bits?)
-                };
-                *args.next_pc = Some(args.pull_u16());
-                // restore of p implicitly resets BRK
-            },
-
-
-            _ => panic!("unimplemented instruction: {}", args.instr),
-    }
         }
     }
 }
