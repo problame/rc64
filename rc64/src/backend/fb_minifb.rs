@@ -62,7 +62,7 @@ impl TryFrom<Key> for C64Key {
     /// ## Hidden keys
     /// Some keys are hidden ...
     ///   (US | DE => C64)
-    ///     ' | a => :
+    ///     ' | ä => :
     ///     \ | # => +
     ///     [ | ü => @
     ///     ] | ~ => *
