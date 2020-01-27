@@ -522,6 +522,8 @@ impl MOS6510 {
                 State::InjectResetVecJmp { interrupts, reset_vec } => {
                     let vector = reset_vec as u16;
                     instrbuf = [0x6C, (vector & 0xFF) as u8, (vector >> 8) as u8];
+                    // Careful: self.mem[self.reg.pc] is now inequal to instrbuf! (Might look
+                    // confusing in debugger)
                     self.state = State::Decode { interrupts };
                 }
                 State::CheckInterrupts { interrupts } => {
@@ -753,7 +755,7 @@ impl MOS6510 {
         }
 
         // call to the macro-transformed fn instr_match below
-        instr_match(InstrMatchArgs {
+        let interrupt_pending = instr_match(InstrMatchArgs {
             instr,
             reg: &mut self.reg,
             effective_addr: effective_addr.map(|v| v.effective),
@@ -761,6 +763,8 @@ impl MOS6510 {
             next_pc: &mut next_pc,
             mem: &mut self.mem,
         });
+
+        self.state.interrupts().update_merge(&interrupt_pending);
 
         if let Some(pc) = next_pc {
             self.reg.pc = pc;
@@ -778,7 +782,7 @@ impl MOS6510 {
         }
 
         #[gen_instr_match]
-        fn instr_match(mut args: InstrMatchArgs) {
+        fn instr_match(mut args: InstrMatchArgs) -> InterruptPending {
             match args.instr {
                 // Sources http://www.obelisk.me.uk/6502/instructions.html
                 //         https://www.masswerk.at/6502/6502_instruction_set.html
@@ -1034,12 +1038,13 @@ impl MOS6510 {
 
                 // BRK 	Force an interrupt 	B
                 Instr(BRK, Imp) => {
-                    unimplemented!();
-                    args.push_u16(args.reg.pc);
-                    args.push(args.reg.p.bits());
-
-                    args.reg.p.set(Flags::BRK, true);
-                    *args.next_pc = Some(args.mem.read_u16(ResetVec::IRQ as u16));
+                    // https://www.c64-wiki.com/wiki/BRK
+                    let mut pending = InterruptPending::default();
+                    pending.irq = true;
+                    // BRK Increases PC by 2, but length of BRK is only 1
+                    *args.next_pc = args.next_pc.and_then(|pc| pc.checked_add(1));
+                    args.reg.p.insert(Flags::BRK);
+                    return pending;
                 },
                 // NOP 	No Operation
                 Instr(NOP, Imp) => (),
@@ -1056,6 +1061,8 @@ impl MOS6510 {
 
                 _ => panic!("unimplemented instruction: {}", args.instr),
             }
+
+            InterruptPending::default()
         }
     }
 }
