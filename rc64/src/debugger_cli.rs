@@ -68,7 +68,8 @@ readmem HEXADDR         read memory at address
 inject HEX [HEX [HEX]]  inject raw instruction on next fetch cycle
 exec   HEX [HEX [HEX]]  exe raw instruction now
 press KEY ...           emulate simultaneous press of keys
-                    "#
+beam on|off             Highlight raster beam position
+"#
                 ),
                 "c" => {
                     return None;
@@ -296,6 +297,18 @@ press KEY ...           emulate simultaneous press of keys
                     };
                     return Some(mos6510::DebuggerMOSMutation::SetPC(addr));
                 }
+                x if x.starts_with("beam ") => match x.split(" ").collect::<Vec<_>>().get(1) {
+                    Some(&"on") => vic.highlight_raster_beam(true),
+                    Some(&"off") => vic.highlight_raster_beam(false),
+                    Some(arg) => {
+                        println!("Invalid arg {:?}", arg);
+                        continue;
+                    }
+                    _ => {
+                        println!("Missing arg");
+                        continue;
+                    }
+                },
                 x => {
                     println!("unknown command: {:?}", x);
                     continue;

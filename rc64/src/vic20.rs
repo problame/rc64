@@ -59,6 +59,7 @@ pub struct VIC20<T> {
     // No explicit `y: usize`, stored in VIC-registers, see functions VIC20::{y,inc_y,reset_y}
     raster_breakpoints: HashSet<usize>,
     raster_break_all: bool,
+    highlight_raster_beam: bool,
 }
 
 // 9.5cycles * 8px
@@ -93,25 +94,8 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             x: X_START,
             raster_breakpoints: HashSet::new(),
             raster_break_all: false,
+            highlight_raster_beam: false,
         }
-    }
-
-    fn y(&self) -> usize {
-        (self.regs.raster_counter as usize)
-            | if self.regs.control_register_1.contains(ControlRegister1::RST8) { 0b1_0000_0000 } else { 0 }
-    }
-
-    fn inc_y(&mut self) {
-        let mut cur = self.y();
-        assert!(cur < 1 << 9);
-        cur += 1;
-        self.regs.raster_counter = (cur & 0xff) as u8;
-        self.regs.control_register_1.set(ControlRegister1::RST8, (cur & 0x100) != 0);
-    }
-
-    fn reset_y(&mut self) {
-        self.regs.raster_counter = 0;
-        self.regs.control_register_1.remove(ControlRegister1::RST8);
     }
 
     pub fn cycle(
@@ -196,6 +180,12 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                     let border_color = Color::try_from(self.regs.border_color.bits()).unwrap();
                     screen.set_px(point, border_color)
                 }
+            } else {
+                for px_pos in 0..8 {
+                    let point = Point((self.x - X_START) as usize + px_pos, self.y());
+                    let color = Color::Black;
+                    screen.set_px(point, color);
+                }
             }
         }
 
@@ -211,6 +201,10 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             if self.y() == self.regs.raster_interrupt_line {
                 self.regs.interrupt_register.insert(InterruptRegister::IRST); // CPU must clear it manually
             }
+        }
+
+        if self.highlight_raster_beam {
+            self.highlight_next_beam_position();
         }
 
         if self.x == X_START && (self.raster_break_all || self.raster_breakpoints.contains(&self.y())) {
@@ -236,12 +230,39 @@ impl<T> VIC20<T> {
     pub fn get_banking(&self) -> mem::BankingState {
         self.mem.banking_state
     }
+
+    fn y(&self) -> usize {
+        (self.regs.raster_counter as usize)
+            | if self.regs.control_register_1.contains(ControlRegister1::RST8) { 0b1_0000_0000 } else { 0 }
+    }
+
+    fn inc_y(&mut self) {
+        let mut cur = self.y();
+        assert!(cur < 1 << 9);
+        cur += 1;
+        self.regs.raster_counter = (cur & 0xff) as u8;
+        self.regs.control_register_1.set(ControlRegister1::RST8, (cur & 0x100) != 0);
+    }
+
+    fn reset_y(&mut self) {
+        self.regs.raster_counter = 0;
+        self.regs.control_register_1.remove(ControlRegister1::RST8);
+    }
+
+    fn highlight_next_beam_position(&self) {
+        for px_pos in 0..8 {
+            let point = Point((self.x - X_START) as usize + px_pos, self.y());
+            let color = Color::Yellow;
+            self.screen.borrow_mut().set_px(point, color);
+        }
+    }
 }
 
 pub trait RasterBreakpointBackend {
     fn add_raster_breakpoint(&mut self, line: usize);
     fn remove_raster_breakpoint(&mut self, line: usize);
     fn break_on_every_raster_line(&mut self, brk: bool);
+    fn highlight_raster_beam(&mut self, beam: bool);
 }
 
 impl<T> RasterBreakpointBackend for VIC20<T> {
@@ -255,5 +276,12 @@ impl<T> RasterBreakpointBackend for VIC20<T> {
 
     fn break_on_every_raster_line(&mut self, brk: bool) {
         self.raster_break_all = brk;
+    }
+
+    fn highlight_raster_beam(&mut self, beam: bool) {
+        self.highlight_raster_beam = beam;
+        if beam {
+            self.highlight_next_beam_position();
+        }
     }
 }
