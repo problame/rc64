@@ -275,10 +275,12 @@ impl<T> MemoryArea for VIC20<T> {
             0x11 => {
                 let mut cr = ControlRegister1::from_bits(val).unwrap();
 
-                let raster_interrupt_line_bit8 =
-                    ((self.regs.control_register_1.contains(ControlRegister1::RST8)) as usize) << 8;
-                self.regs.raster_interrupt_line &= !(raster_interrupt_line_bit8);
-                self.regs.raster_interrupt_line |= raster_interrupt_line_bit8;
+                // eigth bit of raster_interrupt_line
+                if cr.contains(ControlRegister1::RST8) {
+                    self.regs.raster_interrupt_line |= 0b1_0000_0000;
+                } else {
+                    self.regs.raster_interrupt_line &= 0b0_1111_1111;
+                }
 
                 // never commit bit 8 on a write, we track that in raster_interrupt_line
                 // and when reading this cr, we want the read to reflect the current raster line
