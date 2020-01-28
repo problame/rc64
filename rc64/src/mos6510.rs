@@ -319,6 +319,7 @@ impl Display for State {
 use std::collections::HashSet;
 
 pub struct Debugger {
+    cycles: u64,
     pc_bps: HashSet<u16>,
     ea_bps: HashSet<u16>,
     break_after_next_decode: bool,
@@ -330,6 +331,7 @@ pub struct Debugger {
 impl Debugger {
     pub fn new(vic: R2C<dyn RasterBreakpointBackend>) -> Self {
         Debugger {
+            cycles: 0,
             pc_bps: HashSet::default(),
             ea_bps: HashSet::default(),
             break_after_next_decode: false,
@@ -347,6 +349,12 @@ pub enum DebuggerPostDecodePreApplyCbAction {
 }
 
 impl Debugger {
+    pub fn cycles(&self) -> u64 {
+        self.cycles
+    }
+    pub fn update_cycles(&mut self, cycles: u64) {
+        self.cycles = cycles;
+    }
     pub fn set_instr_logging_enabled(&mut self, enabled: bool) {
         self.instr_logging_enabled = enabled;
     }
@@ -571,7 +579,7 @@ impl MOS6510 {
         // debugger callback
         let action = self.debugger.borrow_mut().post_decode_pre_apply_cb(&self);
         let vic = self.debugger.borrow_mut().vic.clone();
-        debug_assert!(self.debugger.try_borrow().is_ok());
+        assert!(self.debugger.try_borrow().is_ok());
         let mos_mutation = match action {
             DebuggerPostDecodePreApplyCbAction::DoCycle => None,
             DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt => self

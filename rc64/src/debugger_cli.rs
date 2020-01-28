@@ -26,7 +26,9 @@ impl DebuggerCli {
         let mut is_first_iteration = true;
 
         loop {
-            let status = format!("{}\n{}", mos.reg(), mos.state());
+            let cycles = { mos.debugger_refmut().cycles() };
+            let status =
+                format!("cycle #{}\n{}\n{}", cycles, mos.reg(), mos.state());
             if is_first_iteration {
                 println!("{}", status);
             }

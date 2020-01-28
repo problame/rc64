@@ -135,6 +135,7 @@ fn main() {
             loop_helper.loop_start();
         }
         cycles += 1;
+        debugger.borrow_mut().update_cycles(cycles);
 
         let cia_irq = cia1.borrow().cycle();
         let cia_nmi = cia2.borrow().cycle();
