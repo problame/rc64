@@ -298,7 +298,11 @@ impl<T> MemoryArea for VIC20<T> {
             0x16 => self.regs.control_register_2 = ControlRegister2::from_bits_truncate(val),
             0x17 => self.regs.sprite_expansion.y = val,
             0x18 => self.regs.memory_pointers = val,
-            0x19 => self.regs.interrupt_register = InterruptRegister::from_bits_truncate(val),
+            0x19 => {
+                // interrupt is acknowledged with a 1 bit
+                self.regs.interrupt_register =
+                    InterruptRegister::from_bits_truncate((!val) & self.regs.interrupt_register.bits());
+            }
             0x1a => self.regs.interrupt_enabled = InterruptEnabled::from_bits_truncate(val),
             0x1b => self.regs.sprite_data_priority = val,
             0x1c => self.regs.sprite_multicolor = val,
