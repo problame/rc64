@@ -275,6 +275,7 @@ pub enum State {
     Decode { interrupts: InterruptPending },
     DecodedInstr { interrupts: InterruptPending, next_instr: Instr },
     ExecInstr { instr: Instr, remaining_cycles: usize, interrupts: InterruptPending },
+    ExecInterruptStackInstrs { remaining_cycles: usize, interrupts: InterruptPending, reset_vec: ResetVec },
 }
 
 impl State {
@@ -293,6 +294,7 @@ impl State {
             Decode { interrupts, .. } => interrupts,
             ExecInstr { interrupts, .. } => interrupts,
             DecodedInstr { interrupts, .. } => interrupts,
+            ExecInterruptStackInstrs { interrupts, .. } => interrupts,
         }
     }
 }
@@ -312,6 +314,11 @@ impl Display for State {
             State::ExecInstr { instr, remaining_cycles, interrupts } => {
                 write!(f, "exec[{} cycles left] {} irqs={{{}}}", remaining_cycles, instr, interrupts)
             }
+            State::ExecInterruptStackInstrs { remaining_cycles, interrupts, reset_vec } => write!(
+                f,
+                "exec_interrupt_stack_instrs[{} cycles left] reset_vec={} irqs={{{}}}",
+                remaining_cycles, reset_vec, interrupts
+            ),
         }
     }
 }
@@ -505,7 +512,7 @@ impl MOS6510 {
     }
 
     pub fn cycle(&mut self, irq: Option<Interrupt>, nmi: Option<Interrupt>) {
-        // handle the interrupt at the time it happens (even in the middle of executing an instruction)
+        // record interrupt now, deliver it next time we are in state CheckInterrupts (i.e. next instr)
         let cycle_interrupt_pending = {
             let mut ip = InterruptPending::default();
             ip.irq = !self.reg.p.contains(Flags::IRQD) && irq.is_some();
@@ -524,6 +531,13 @@ impl MOS6510 {
                     *remaining_cycles = remaining_cycles.saturating_sub(1);
                     if *remaining_cycles == 0 {
                         self.state = State::CheckInterrupts { interrupts: *interrupts };
+                    }
+                    return;
+                }
+                State::ExecInterruptStackInstrs { ref mut remaining_cycles, interrupts, reset_vec } => {
+                    *remaining_cycles = remaining_cycles.saturating_sub(1);
+                    if *remaining_cycles == 0 {
+                        self.state = State::InjectResetVecJmp { interrupts, reset_vec };
                     }
                     return;
                 }
@@ -547,7 +561,11 @@ impl MOS6510 {
                             self.push_u16(self.reg.pc);
                             self.push(self.reg.p.bits());
                             self.reg.p.set(Flags::IRQD, true);
-                            self.state = State::InjectResetVecJmp { interrupts, reset_vec };
+                            // "Next, the CPU takes 7 cycles to store its return address and processor status."
+                            //  --https://codebase64.org/doku.php?id=base:double_irq_explained
+                            let remaining_cycles = 7;
+                            self.state =
+                                State::ExecInterruptStackInstrs { remaining_cycles, interrupts, reset_vec };
                         }
                         InterruptAckResult::InjectInstr(i) => {
                             self.state =
