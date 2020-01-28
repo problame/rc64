@@ -9,11 +9,16 @@ use std::time;
 pub struct DebuggerCli {
     rl: rustyline::Editor<()>,
     last_input: String,
+    vic_status_dump: bool,
 }
 
 impl Default for DebuggerCli {
     fn default() -> Self {
-        DebuggerCli { rl: rustyline::Editor::<()>::new(), last_input: "".to_owned() }
+        DebuggerCli {
+            rl: rustyline::Editor::<()>::new(),
+            last_input: "".to_owned(),
+            vic_status_dump: false,
+        }
     }
 }
 
@@ -27,8 +32,16 @@ impl DebuggerCli {
 
         loop {
             let cycles = { mos.debugger_refmut().cycles() };
-            let status =
-                format!("cycle #{}\n{}\n{}", cycles, mos.reg(), mos.state());
+            let mut status = String::new();
+            use std::fmt::Write;
+            writeln!(&mut status, "cycle #{}", cycles);
+            writeln!(&mut status, "MOS REGS {}", mos.reg());
+            writeln!(&mut status, "MOS STATE: {}", mos.state());
+            if self.vic_status_dump {
+                writeln!(&mut status, "VIC DUMP: {}", vic.status_dump());
+            }
+            let status = status.trim_end();
+
             if is_first_iteration {
                 println!("{}", status);
             }
@@ -62,6 +75,7 @@ d pc|ea HEXADDR         del pc/ea breakpoint add hex-encoded addr
 b rst N|*               break when raster beam reaches beginning of line N, N may be '*'
 d rst N|*               delete raster beam breakpoint
 info                    MOS dump
+set (no)vic-status      dump VIC status on `info` command
 stack sp                dump stack from sp upward
 stack all               dump entire stack page
 instrlog on|off         enable instruciton logging to console
@@ -98,6 +112,14 @@ beam on|off             Highlight raster beam position
                     println!("{}", status);
                     continue;
                 }
+                x if x.starts_with("set ") => match x.trim_start_matches("set ") {
+                    "vic-status" => self.vic_status_dump = true,
+                    "novic-status" => self.vic_status_dump = false,
+                    x => {
+                        println!("unknown var {:?}", x);
+                        continue;
+                    }
+                },
                 x if x.starts_with("instrlog ") => {
                     let enabled = match x {
                         "instrlog on" => true,

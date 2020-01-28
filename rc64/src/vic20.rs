@@ -259,6 +259,7 @@ impl<T> VIC20<T> {
 }
 
 pub trait RasterBreakpointBackend {
+    fn status_dump(&self) -> String;
     fn add_raster_breakpoint(&mut self, line: usize);
     fn remove_raster_breakpoint(&mut self, line: usize);
     fn break_on_every_raster_line(&mut self, brk: bool);
@@ -266,6 +267,10 @@ pub trait RasterBreakpointBackend {
 }
 
 impl<T> RasterBreakpointBackend for VIC20<T> {
+    fn status_dump(&self) -> String {
+        format!("regs={{{:?}}}", self.regs)
+    }
+
     fn add_raster_breakpoint(&mut self, line: usize) {
         self.raster_breakpoints.insert(line);
     }
