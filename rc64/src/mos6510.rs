@@ -535,6 +535,10 @@ impl MOS6510 {
                     self.state = State::Decode { interrupts };
                 }
                 State::CheckInterrupts { interrupts } => {
+                    if self.reg.p.contains(Flags::IRQD) {
+                        self.state = State::Fetch { interrupts: InterruptPending::default() };
+                        return;
+                    }
                     let mut interrupts = interrupts;
                     match interrupts.ack_highest_prio() {
                         InterruptAckResult::ResetVec(reset_vec) => {
