@@ -1,6 +1,5 @@
 use crate::ram::RAM;
 use crate::utils::R2C;
-use bit_vec::BitVec;
 
 pub type Areas = enum_map::EnumMap<MemoryAreaKind, R2C<dyn MemoryArea>>;
 pub struct MemoryView {
@@ -35,9 +34,14 @@ impl MemoryView {
 
     pub fn read(&self, addr: u16) -> u8 {
         if addr == 0 {
-            return self.banking_state.cpu_control_lines;
+            return self.banking_state.cpu_control_lines.bits();
         } else if addr == 1 {
-            return self.banking_state.expansion_port;
+            return self.banking_state.expansion_port.bits();
+        }
+
+        if addr >= 0xfffa {
+            let rel_addr = addr - 0xe000;
+            return self.memory_areas[MemoryAreaKind::KernelRom].borrow().read(rel_addr);
         }
 
         for segment in self.banking_state.iter() {
@@ -51,9 +55,11 @@ impl MemoryView {
 
     pub fn write(&mut self, addr: u16, val: u8) {
         if addr == 0 {
-            self.banking_state.update(BankingStateUpdate::CpuControlLines(val))
+            self.banking_state
+                .update(BankingStateUpdate::CpuControlLines(CpuControlLines::from_bits_truncate(val)))
         } else if addr == 1 {
-            self.banking_state.update(BankingStateUpdate::ExpansionPort(val))
+            self.banking_state
+                .update(BankingStateUpdate::ExpansionPort(ExpansionPort::from_bits_truncate(val)))
         }
 
         for segment in self.banking_state.iter() {
@@ -98,22 +104,37 @@ pub enum MemoryAreaKind {
 }
 
 struct BankingState {
-    cpu_control_lines: u8,
-    expansion_port: u8,
+    cpu_control_lines: CpuControlLines,
+    expansion_port: ExpansionPort,
     banking: Vec<Segment>,
 }
 
 #[derive(Debug)]
 enum BankingStateUpdate {
-    CpuControlLines(u8),
-    ExpansionPort(u8),
+    CpuControlLines(CpuControlLines),
+    ExpansionPort(ExpansionPort),
+}
+
+bitflags! {
+    struct CpuControlLines: u8 {
+        const LORAM = 0b00000_001;
+        const HIRAM = 0b00000_010;
+        const CHAREN = 0b00000_100;
+    }
+}
+
+bitflags! {
+    struct ExpansionPort: u8 {
+        const GAME = 0b000000_01;
+        const EXROM = 0b000000_10;
+    }
 }
 
 impl Default for BankingState {
     fn default() -> BankingState {
         let mut b = BankingState {
-            cpu_control_lines: 0b00_00_01_11,
-            expansion_port: 0b00_00_00_11,
+            cpu_control_lines: CpuControlLines::default(),
+            expansion_port: ExpansionPort::default(),
             banking: Vec::with_capacity(20),
         };
         b.update_banking();
@@ -121,13 +142,31 @@ impl Default for BankingState {
     }
 }
 
+impl Default for CpuControlLines {
+    fn default() -> Self {
+        CpuControlLines::all()
+    }
+}
+
+impl Default for ExpansionPort {
+    fn default() -> Self {
+        ExpansionPort::all()
+    }
+}
+
 impl BankingState {
     pub fn update(&mut self, update: BankingStateUpdate) {
         match update {
             BankingStateUpdate::CpuControlLines(value) => {
+                if self.cpu_control_lines != value {
+                    println!("CPU control lines update: {:?} -> {:?}", self.cpu_control_lines, value)
+                }
                 self.cpu_control_lines = value;
             }
             BankingStateUpdate::ExpansionPort(value) => {
+                if self.expansion_port != value {
+                    println!("Expansion port update: {:?} -> {:?}", self.expansion_port, value)
+                }
                 self.expansion_port = value;
             }
         }
@@ -139,13 +178,12 @@ impl BankingState {
     fn update_banking(&mut self) {
         self.banking.clear();
 
-        let bitmap = BitVec::from_bytes(&[self.expansion_port, self.cpu_control_lines]);
         #[allow(clippy::identity_op)]
-        let loram = bitmap.get(15 - 0).unwrap();
-        let hiram = bitmap.get(15 - 1).unwrap();
-        let charen = bitmap.get(15 - 2).unwrap();
-        let game = bitmap.get(15 - 8).unwrap();
-        let exrom = bitmap.get(15 - 9).unwrap();
+        let loram = self.cpu_control_lines.contains(CpuControlLines::LORAM);
+        let hiram = self.cpu_control_lines.contains(CpuControlLines::HIRAM);
+        let charen = self.cpu_control_lines.contains(CpuControlLines::CHAREN);
+        let game = self.expansion_port.contains(ExpansionPort::GAME);
+        let exrom = self.expansion_port.contains(ExpansionPort::EXROM);
         let combined = {
             let mut v: u16 = 0;
             v |= (exrom as u16) << 4;
@@ -334,11 +372,11 @@ mod tests {
         assert_eq!(mv.read(0xe023), 1);
         assert_eq!(mv.ram.borrow().read(0xe023), 42);
         // now unmap kernal rom by unsetting
-        mv.write(0x0000, mv.banking_state.cpu_control_lines & !(0x2));
+        mv.write(0x0000, mv.banking_state.cpu_control_lines.bits() & !(0x2));
         assert_eq!(mv.read(0xe023), 42);
         assert_eq!(mv.ram.borrow().read(0xe023), 42);
         // now remap kernal rom by setting KERNAL
-        mv.write(0x0000, mv.banking_state.cpu_control_lines | (0x2));
+        mv.write(0x0000, mv.banking_state.cpu_control_lines.bits() | (0x2));
         assert_eq!(mv.read(0xe023), 1);
         assert_eq!(mv.ram.borrow().read(0xe023), 42);
     }
