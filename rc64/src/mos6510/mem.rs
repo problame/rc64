@@ -182,7 +182,7 @@ impl BankingState {
         let loram = self.cpu_control_lines.contains(CpuControlLines::LORAM);
         let hiram = self.cpu_control_lines.contains(CpuControlLines::HIRAM);
         let charen = self.cpu_control_lines.contains(CpuControlLines::CHAREN);
-        let game = self.expansion_port.contains(ExpansionPort::GAME);
+        let game = true; //self.expansion_port.contains(ExpansionPort::GAME);
         let exrom = self.expansion_port.contains(ExpansionPort::EXROM);
         let combined = {
             let mut v: u16 = 0;
