@@ -17,9 +17,10 @@ headless-chicken = []
 name = "rc64"
 path = "src/main.rs"
 
-[[bin]]
-name = "xfrm_timing_table"
-path = "src/mos6510/xfrm_timing_table.rs"
+# outdated, was used for some codegen initially
+# [[bin]]
+# name = "xfrm_timing_table"
+# path = "src/mos6510/xfrm_timing_table.rs"
 
 [dependencies]
 rc64-macros = { path = "../macros" }

@@ -11,18 +11,18 @@ macro_rules! r2c_new {
 }
 
 macro_rules! unimpl {
-    ($retval: expr) => {
+    ($retval: expr) => {{
         if cfg!(feature = "headless-chicken") {
-            return $retval;
+            $retval
         } else {
             unimplemented!()
         }
-    };
-    () => {
+    }};
+    () => {{
         if cfg!(not(feature = "headless-chicken")) {
             unimplemented!()
         } else {
             ()
         }
-    };
+    }};
 }

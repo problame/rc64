@@ -78,7 +78,7 @@ fn main() {
     let keyboard_emulator = r2c_new!(EmulatedKeyboard::new());
 
     let cia1 = r2c_new!(CIA::<()>::new(CIAKind::Chip1 {
-        peripherals: r2c_new!((screen.clone(), keyboard_emulator.clone()))
+        peripherals: r2c_new!((screen, keyboard_emulator.clone()))
     }));
     let cia2 = r2c_new!(CIA::new(CIAKind::Chip2 { vic: vic20.clone() }));
 

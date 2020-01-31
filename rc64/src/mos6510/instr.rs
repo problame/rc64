@@ -293,7 +293,7 @@ pub enum BranchOutcome {
 }
 
 impl Instr {
-    pub fn cycles(&self, acv: Option<AddrCalcVars>, branch_taken: Option<BranchOutcome>) -> usize {
+    pub fn cycles(self, acv: Option<AddrCalcVars>, branch_taken: Option<BranchOutcome>) -> usize {
         let (num_cycles, boundary_crossing, branch_outcome_behavior) = instr_cycle_info(self);
         let mut additional_cycles = 0;
         additional_cycles += match (boundary_crossing, acv.map(|a| a.crosses_page()).unwrap_or(false)) {
@@ -323,7 +323,7 @@ enum BranchOutcomeDependentBehavior {
 
 // could almost be const, but let's inline it to hope for the best
 #[inline]
-fn instr_cycle_info(instr: &Instr) -> (usize, BoundaryCrossingBehavior, BranchOutcomeDependentBehavior) {
+fn instr_cycle_info(instr: Instr) -> (usize, BoundaryCrossingBehavior, BranchOutcomeDependentBehavior) {
     use BoundaryCrossingBehavior::AddOneCycle as PB1;
     use BoundaryCrossingBehavior::NoAdditionalCycle as PB0;
 

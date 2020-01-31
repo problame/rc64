@@ -1,7 +1,7 @@
 use crate::cia::keyboard::{C64Key, KeyboardMatrix};
 use crate::cia::PeripheralDevicesBackend;
 use crate::vic20::{Color, Point, ScreenBackend, SCREEN_HEIGHT, SCREEN_WIDTH};
-use minifb::{Key, KeyRepeat, Window, WindowOptions};
+use minifb::{Key, Window, WindowOptions};
 use spin::Mutex;
 use std::convert::TryFrom;
 use std::sync::Arc;
@@ -33,7 +33,7 @@ impl Minifb {
                     fb.update_with_buffer(&buf).unwrap();
 
                     let mut pressed_keys = pressed_keys.lock();
-                    *pressed_keys = fb.get_keys().unwrap_or(Vec::new());
+                    *pressed_keys = fb.get_keys().unwrap_or_default();
                 }
             })
         };

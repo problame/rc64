@@ -25,8 +25,8 @@ impl<T: AsRef<[u8]>> MemoryArea for &'_ mut ROM<T> {
 }
 
 impl From<Vec<u8>> for ROM<Vec<u8>> {
-    fn from(bytes: Vec<u8>) -> Self {
-        ROM { content: bytes.clone() }
+    fn from(content: Vec<u8>) -> Self {
+        ROM { content }
     }
 }
 

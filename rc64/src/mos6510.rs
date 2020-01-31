@@ -6,7 +6,6 @@ use crate::interrupt::Interrupt;
 use crate::ram::RAM;
 use crate::utils::R2C;
 use crate::vic20::RasterBreakpointBackend;
-use crate::vic20::VIC20;
 pub use mem::*;
 use std::cell::RefCell;
 use std::iter::FromIterator;
@@ -242,27 +241,28 @@ enum InterruptAckResult {
 }
 
 impl InterruptPending {
-    fn update_merge(&mut self, update: &InterruptPending) {
+    #[inline]
+    fn update_merge(&mut self, update: InterruptPending) {
         if let Some(v) = update.inject_instr {
             self.inject_instr = Some(v);
         }
         self.irq |= update.irq;
         self.nmi |= update.nmi;
     }
+    #[inline]
     fn ack_highest_prio(&mut self) -> InterruptAckResult {
         if self.nmi {
             self.nmi = false;
             self.irq = false;
-            return InterruptAckResult::ResetVec(ResetVec::NMI);
+            InterruptAckResult::ResetVec(ResetVec::NMI)
         } else if self.irq {
             self.irq = false;
-            return InterruptAckResult::ResetVec(ResetVec::IRQ);
+            InterruptAckResult::ResetVec(ResetVec::IRQ)
         } else {
-            return self
-                .inject_instr
-                .map(|i| InterruptAckResult::InjectInstr(i))
+            self.inject_instr
+                .map(InterruptAckResult::InjectInstr)
                 .take()
-                .unwrap_or(InterruptAckResult::None);
+                .unwrap_or(InterruptAckResult::None)
         }
     }
 }
@@ -411,7 +411,7 @@ impl Debugger {
             DebuggerPostDecodePreApplyCbAction::DoCycle
         }
     }
-    fn ea_cb(&mut self, ea: u16, mos: &MOS6510) {
+    fn ea_cb(&mut self, ea: u16) {
         if self.ea_bps.contains(&ea) {
             self.break_after_next_decode = true; // FIXME hacky
         }
@@ -503,10 +503,6 @@ impl MOS6510 {
         self.ram.clone()
     }
 
-    pub fn reset_pc_to(&mut self, addr: u16) {
-        self.reg.pc = addr;
-    }
-
     pub fn inject_instr_on_next_fetch(&mut self, i: Instr) {
         self.state.interrupts().inject_instr = Some(i);
     }
@@ -522,7 +518,7 @@ impl MOS6510 {
         if cycle_interrupt_pending.nmi {
             unimplemented!()
         }
-        self.state.interrupts().update_merge(&cycle_interrupt_pending);
+        self.state.interrupts().update_merge(cycle_interrupt_pending);
 
         let mut instrbuf = [0 as u8; 3];
         let next_instr = loop {
@@ -755,7 +751,7 @@ impl MOS6510 {
         };
 
         if let Some(ea) = effective_addr {
-            self.debugger.borrow_mut().ea_cb(ea.effective, &self);
+            self.debugger.borrow_mut().ea_cb(ea.effective);
         }
 
         let effective_addr_load = effective_addr.map(|a| self.mem.read(a.effective));
@@ -788,7 +784,7 @@ impl MOS6510 {
             mem: &mut self.mem,
         });
 
-        self.state.interrupts().update_merge(&interrupt_pending);
+        self.state.interrupts().update_merge(interrupt_pending);
 
         //debug_assert_eq!(self.state, State::BeginInstr);
         self.state = State::ExecInstr {

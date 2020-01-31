@@ -1,3 +1,5 @@
+#![allow(clippy::inconsistent_digit_grouping)]
+
 //! VIC II Registers
 //!
 //!  #| Adr.  |Bit7|Bit6|Bit5|Bit4|Bit3|Bit2|Bit1|Bit0| Function
@@ -248,12 +250,14 @@ impl<T> MemoryArea for VIC20<T> {
             _ => unreachable!("47usize..=std::usize::MAX should be masked out"),
         };
 
-        // print!("VIC READ 0xd0{:0>2x}-> 0x{:0>2x}", addr, val);
-        // if val != 0 {
-        //     println!(" (!)");
-        // } else {
-        //     println!("");
-        // }
+        if false {
+            print!("VIC READ 0xd0{:0>2x}-> 0x{:0>2x}", addr, val);
+            if val != 0 {
+                println!(" (!)");
+            } else {
+                println!();
+            }
+        }
 
         val
     }

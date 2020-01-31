@@ -4,7 +4,6 @@ mod registers;
 
 use crate::interrupt::Interrupt;
 pub use backends::PeripheralDevicesBackend;
-use bit_vec::BitVec;
 
 use crate::mos6510;
 use crate::utils::R2C;
@@ -119,9 +118,9 @@ impl<T: 'static> CIA<T> {
         self.tod
             .borrow_mut()
             .cycle()
-            .or(self.timer_a.borrow_mut().cycle())
-            .or(self.timer_b.borrow_mut().cycle())
-            .or(self.data_port.borrow_mut().cycle())
+            .or_else(|| self.timer_a.borrow_mut().cycle())
+            .or_else(|| self.timer_b.borrow_mut().cycle())
+            .or_else(|| self.data_port.borrow_mut().cycle())
     }
 }
 

@@ -2,7 +2,6 @@ use crate::cia::keyboard::KeyboardMatrix;
 use crate::interrupt::Interrupt;
 use crate::utils::R2C;
 use crate::vic20::VIC20;
-use bit_vec::BitVec;
 
 pub enum DataPortBackend<T> {
     /// Location Range: 56320-56321 ($DC00-$DC01)
@@ -381,6 +380,7 @@ pub(super) enum TimerInputModeA {
 }
 
 #[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
 pub(super) enum TimerInputModeB {
     MosCycles,
     UserPortCNTLine,
@@ -389,7 +389,7 @@ pub(super) enum TimerInputModeB {
 }
 
 impl TimerInputMode {
-    fn count_mos_cycles(&self) -> bool {
+    fn count_mos_cycles(self) -> bool {
         match self {
             TimerInputMode::A(TimerInputModeA::MosCycles)
             | TimerInputMode::B(TimerInputModeB::MosCycles) => true,
@@ -397,14 +397,14 @@ impl TimerInputMode {
         }
     }
 
-    fn stepped_by_other_timer(&self) -> bool {
+    fn stepped_by_other_timer(self) -> bool {
         match self {
             TimerInputMode::B(TimerInputModeB::OtherTimer) => true,
             _ => false,
         }
     }
 
-    fn interrupt_source(&self) -> InterruptSources {
+    fn interrupt_source(self) -> InterruptSources {
         match self {
             TimerInputMode::A(_) => InterruptSources::TIMER_A,
             TimerInputMode::B(_) => InterruptSources::TIMER_B,
@@ -659,11 +659,11 @@ pub struct InterruptBackend {
 bitflags! {
     #[derive(Default)]
     pub struct InterruptSources: u8 {
-        const TIMER_A    = 0b00000001;
-        const TIMER_B    = 0b00000010;
-        const TOD_ALARM  = 0b00000100;
-        const SERIAL_REG = 0b00001000;
-        const FLAG_LINE  = 0b00010000;
+        const TIMER_A    = 0b0000_0001;
+        const TIMER_B    = 0b0000_0010;
+        const TOD_ALARM  = 0b0000_0100;
+        const SERIAL_REG = 0b0000_1000;
+        const FLAG_LINE  = 0b0001_0000;
     }
 }
 

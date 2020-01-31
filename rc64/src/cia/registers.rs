@@ -448,7 +448,7 @@ impl Register for SerialShift {
 ///         be set, 0=bits written with 1 will be cleared)
 impl Register for InterruptControl {
     fn read(&self) -> u8 {
-        const INTERRUPTED: u8 = 0b10000000;
+        const INTERRUPTED: u8 = 0b1000_0000;
 
         let mut be = self.0.borrow_mut();
         let result = be.occured.bits() | if be.interrupted { INTERRUPTED } else { 0 };
@@ -459,7 +459,7 @@ impl Register for InterruptControl {
     }
 
     fn write(&self, val: u8) {
-        bitflags! {struct WriteMode: u8 { const SET = 0b10000000; }};
+        bitflags! {struct WriteMode: u8 { const SET = 0b1000_0000; }};
         self.0.borrow_mut().enabled.set(
             InterruptSources::from_bits_truncate(val),
             WriteMode::from_bits_truncate(val).contains(WriteMode::SET),

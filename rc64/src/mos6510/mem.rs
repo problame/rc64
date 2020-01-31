@@ -229,7 +229,7 @@ impl BankingState {
             _ => assert!(combined < 32, "{}", combined),
         }
 
-        debug_assert!(
+        assert!(
             {
                 let mut banking = self.banking.clone();
                 banking.sort_by_key(|seg| seg.base);
@@ -258,7 +258,7 @@ struct Segment {
 }
 
 impl Segment {
-    fn relative_address(&self, absolute_addr: u16) -> Option<u16> {
+    fn relative_address(self, absolute_addr: u16) -> Option<u16> {
         absolute_addr.checked_sub(self.base).and_then(|relative_addr| {
             if relative_addr < self.len {
                 Some(relative_addr)

@@ -189,6 +189,8 @@ impl KeyboardMatrix {
     pub const fn num_cols(&self) -> u8 {
         Self::NUM_COLS as u8
     }
+
+    #[allow(dead_code)]
     pub fn empty(&self) -> bool {
         for row in self.0.iter() {
             for cell in row {
@@ -253,14 +255,14 @@ where
 
 impl fmt::Debug for KeyboardMatrix {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "  01234567\n")?;
-        write!(f, "  --------\n")?;
+        writeln!(f, "  01234567")?;
+        writeln!(f, "  --------")?;
         for (row_idx, row) in self.0.iter().enumerate() {
             write!(f, "{}|", row_idx)?;
             for is_pressed in row {
                 write!(f, "{}", *is_pressed as u8)?;
             }
-            write!(f, "\n")?;
+            writeln!(f)?;
         }
 
         Ok(())
@@ -309,7 +311,7 @@ impl PeripheralDevicesBackend for EmulatedKeyboard {
         } else {
             let matrix = self.current_matrix.take();
             self.current_matrix.set(matrix.clone());
-            return matrix;
+            matrix
         }
     }
 }

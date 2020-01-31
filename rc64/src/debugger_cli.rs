@@ -156,7 +156,7 @@ beam on|off             Highlight raster beam position
                     let mut tbl = [("pc", dbg.pc_breakpoints()), ("ea", dbg.ea_breakpoints())];
                     for (name, list) in tbl.iter_mut() {
                         list.sort();
-                        let list = list.into_iter().map(|b| format!("{:x}", b)).collect::<Vec<_>>();
+                        let list = list.iter().map(|b| format!("{:x}", b)).collect::<Vec<_>>();
                         println!("{} breakpoints: {}", name, list.join(", "));
                     }
                     continue;
@@ -205,7 +205,7 @@ beam on|off             Highlight raster beam position
                     }
                 }
                 x if x.starts_with("readmem ") => {
-                    let comps = x.split(" ").collect::<Vec<_>>();
+                    let comps = x.split(' ').collect::<Vec<_>>();
                     let addr = {
                         if comps.len() != 2 {
                             println!("invalid argument");
@@ -224,7 +224,7 @@ beam on|off             Highlight raster beam position
                     println!("0x{:04x} = {:02x}", addr, val);
                 }
                 x if x.starts_with("inject ") || x.starts_with("exec ") => {
-                    let rem = x.split(" ").collect::<Vec<_>>();
+                    let rem = x.split(' ').collect::<Vec<_>>();
                     if rem.len() < 2 {
                         println!("at least the opcode, please!");
                         continue;
@@ -262,7 +262,7 @@ beam on|off             Highlight raster beam position
                     return Some(mutation);
                 }
                 x if x.starts_with("press ") => {
-                    let mut keys = x.split(" ").collect::<Vec<_>>();
+                    let mut keys = x.split(' ').collect::<Vec<_>>();
                     keys.remove(0);
                     let keys = {
                         let keys: Result<Vec<_>, _> = keys.into_iter().map(C64Key::from_str).collect();
@@ -280,7 +280,7 @@ beam on|off             Highlight raster beam position
                         .enqueue_key_event(time::Duration::from_millis(250), keys);
                 }
                 x if x.starts_with("loadtomem ") => {
-                    let comps = x.split(" ").collect::<Vec<_>>();
+                    let comps = x.split(' ').collect::<Vec<_>>();
                     let (addr, path) = {
                         if comps.len() != 3 {
                             println!("invalid argument");
@@ -311,7 +311,7 @@ beam on|off             Highlight raster beam position
                     }
                 }
                 x if x.starts_with("setpc ") => {
-                    let comps = x.split(" ").collect::<Vec<_>>();
+                    let comps = x.split(' ').collect::<Vec<_>>();
                     let addr = {
                         if comps.len() != 2 {
                             println!("invalid argument");
@@ -329,7 +329,7 @@ beam on|off             Highlight raster beam position
                     };
                     return Some(mos6510::DebuggerMOSMutation::SetPC(addr));
                 }
-                x if x.starts_with("beam ") => match x.split(" ").collect::<Vec<_>>().get(1) {
+                x if x.starts_with("beam ") => match x.split(' ').collect::<Vec<_>>().get(1) {
                     Some(&"on") => vic.highlight_raster_beam(true),
                     Some(&"off") => vic.highlight_raster_beam(false),
                     Some(arg) => {
