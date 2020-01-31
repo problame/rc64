@@ -77,8 +77,9 @@ const X_START: isize = -(HBLANK_LEFT_PX + 48 / 2);
 pub const PIXELS_PER_CYCLE: usize = 8;
 
 pub const VISIBLE_VERTICAL_PX: usize = 284;
-pub const VBLANK_PX: usize = 28;
-pub const SCREEN_HEIGHT: usize = VISIBLE_VERTICAL_PX + VBLANK_PX;
+pub const VBLANK_TOP_PX: usize = 14;
+pub const VBLANK_BTM_PX: usize = 14;
+pub const SCREEN_HEIGHT: usize = VBLANK_TOP_PX + VISIBLE_VERTICAL_PX + VBLANK_BTM_PX;
 
 impl<T: AsRef<[u8]>> VIC20<T> {
     pub fn new(
@@ -105,12 +106,13 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         assert_eq!(VISIBLE_HORIZONTAL_PX, 404);
         assert_eq!(SCREEN_WIDTH, 504);
         assert_eq!(SCREEN_WIDTH / PIXELS_PER_CYCLE, 63);
+        assert_eq!(SCREEN_HEIGHT, 312);
 
         let border_start_x = X_START + HBLANK_LEFT_PX + 1;
         let border_end_x = MAX_X - HBLANK_RIGHT_PX;
 
-        let border_start_y = VBLANK_PX;
-        let border_end_y = SCREEN_HEIGHT;
+        let border_start_y = VBLANK_TOP_PX;
+        let border_end_y = SCREEN_HEIGHT - VBLANK_BTM_PX;
 
         let (content_start_x, content_end_x) =
             if self.regs.control_register_2.contains(ControlRegister2::CSEL) {
