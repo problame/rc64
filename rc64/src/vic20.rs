@@ -61,6 +61,7 @@ pub struct VIC20<T> {
     raster_breakpoints: HashSet<usize>,
     raster_break_all: bool,
     highlight_raster_beam: bool,
+    stall_cycles_remaining: usize,
 }
 
 // 9.5cycles * 8px
@@ -82,6 +83,8 @@ pub const VBLANK_TOP_PX: usize = 14;
 pub const VBLANK_BTM_PX: usize = 14;
 pub const SCREEN_HEIGHT: usize = VBLANK_TOP_PX + VISIBLE_VERTICAL_PX + VBLANK_BTM_PX;
 
+pub struct Stallcycle;
+
 impl<T: AsRef<[u8]>> VIC20<T> {
     pub fn new(
         char_rom: ROM<T>,
@@ -98,6 +101,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             raster_breakpoints: HashSet::new(),
             raster_break_all: false,
             highlight_raster_beam: false,
+            stall_cycles_remaining: 0,
         }
     }
 
@@ -105,11 +109,13 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         &mut self,
         cycles: u64,
         mut dbg: std::cell::RefMut<'_, super::mos6510::Debugger>,
-    ) -> Option<crate::interrupt::Interrupt> {
+    ) -> (Option<Stallcycle>, Option<crate::interrupt::Interrupt>) {
         assert_eq!(VISIBLE_HORIZONTAL_PX, 404);
         assert_eq!(SCREEN_WIDTH, 504);
         assert_eq!(SCREEN_WIDTH / PIXELS_PER_CYCLE, 63);
         assert_eq!(SCREEN_HEIGHT, 312);
+
+        self.stall_cycles_remaining = self.stall_cycles_remaining.saturating_sub(1);
 
         let border_start_x = X_START + HBLANK_LEFT_PX + 1;
         let border_end_x = MAX_X - HBLANK_RIGHT_PX;
@@ -146,7 +152,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         {
             let mut screen = self.screen.borrow_mut();
             if inside_content_zone {
-                // Coordinate transformation
+                // Coordinate transformation to content coordinates
                 let x = (self.x - content_start_x) as usize;
                 let y = self.y() - content_start_y;
 
@@ -168,7 +174,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                             .read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
 
                         let fg = Color::try_from(color).unwrap();
-                        let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
+                        let bg = Color::try_from(self.regs.background_color[0] & 0b0000_1111).unwrap(); // text mode bg color
 
                         for px_pos in 0..8 {
                             let bitpos = (8 - px_pos) - 1;
@@ -211,11 +217,23 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 assert_eq!(self.y(), SCREEN_HEIGHT);
                 self.reset_y();
             }
+
             if self.y() == self.regs.raster_interrupt_line {
                 self.regs.interrupt_register.insert(InterruptRegister::IRST); // CPU must clear it manually
             }
+
+            // A Bad Line Condition is given at any arbitrary clock cycle, if at the
+            // negative edge of ø0 at the beginning of the cycle RASTER >= $30 and RASTER
+            // <= $f7 and the lower three bits of RASTER are equal to YSCROLL and if the
+            // DEN bit was set during an arbitrary cycle of raster line $30.
+            // TODO: DEN bit and YSCROLL
+            if self.y() >= 0x30 && self.y() <= 0xf7 && self.y() & 0b111 == 0 {
+                assert_eq!(self.stall_cycles_remaining, 0);
+                self.stall_cycles_remaining = 40;
+            }
         }
 
+        let stallcycle = if self.stall_cycles_remaining != 0 { Some(Stallcycle) } else { None };
         if self.highlight_raster_beam {
             self.highlight_next_beam_position();
         }
@@ -225,13 +243,15 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         }
 
         // deliver irq if appropriate
-        if self.regs.interrupt_enabled.contains(InterruptEnabled::ERST)
+        let irq = if self.regs.interrupt_enabled.contains(InterruptEnabled::ERST)
             && self.regs.interrupt_register.contains(InterruptRegister::IRST)
         {
             Some(crate::interrupt::Interrupt)
         } else {
             None
-        }
+        };
+
+        (stallcycle, irq)
     }
 }
 
