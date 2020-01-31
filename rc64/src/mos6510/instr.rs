@@ -558,12 +558,12 @@ mod tests {
         use AddrCalcVars as ACV;
         assert_eq!(
             4,
-            Instr(LDA, AbX(0x1234)).cycles(Some(ACV { base: 0x1234, effective: 0x1234 })),
+            Instr(LDA, AbX(0x1234)).cycles(Some(ACV { base: 0x1234, effective: 0x1234 }), None),
             "no crossing"
         );
         assert_eq!(
             5,
-            Instr(LDA, AbX(0x1234)).cycles(Some(ACV { base: 0x1234, effective: 0x1300 })),
+            Instr(LDA, AbX(0x1234)).cycles(Some(ACV { base: 0x1234, effective: 0x1300 }), None),
             "crossing"
         );
     }
