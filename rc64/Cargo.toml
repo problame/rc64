@@ -17,11 +17,6 @@ headless-chicken = []
 name = "rc64"
 path = "src/main.rs"
 
-# outdated, was used for some codegen initially
-# [[bin]]
-# name = "xfrm_timing_table"
-# path = "src/mos6510/xfrm_timing_table.rs"
-
 [dependencies]
 rc64-macros = { path = "../macros" }
 bit-vec = "0.6"
@@ -36,8 +31,6 @@ maplit = "1.0"
 bitflags = "1.2"
 spin  ="0.5"
 spin_sleep = "*"
-scraper = "0.11"
-matches = "0.1"
 rustyline = "~5.0.0"
 signal-hook = "~0.1"
 regex = "~1"

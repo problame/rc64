@@ -331,7 +331,8 @@ fn instr_cycle_info(instr: Instr) -> (usize, BoundaryCrossingBehavior, BranchOut
     use BranchOutcomeDependentBehavior::Unaffected as BR0;
 
     match instr {
-        // originally generated using xfrm_timing_table.rs, but since then manually updated to accomodate BranchOutcomeDependentBehavior
+        // originally generated using xfrm_timing_table.rs (search the git history)
+        // but since then manually updated to accomodate BranchOutcomeDependentBehavior
         Instr(Op::BPL, Addr::PCr(_)) => (2, PB1, BR1),
         Instr(Op::BMI, Addr::PCr(_)) => (2, PB1, BR1),
         Instr(Op::BVC, Addr::PCr(_)) => (2, PB1, BR1),
