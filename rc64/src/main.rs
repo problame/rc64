@@ -134,13 +134,12 @@ fn main() {
             // scale callback by 1000 because our loop is so fast
             loop_helper.loop_start();
         }
-        cycles += 1;
         debugger.borrow_mut().update_cycles(cycles);
 
         let cia_irq = cia1.borrow().cycle();
         let cia_nmi = cia2.borrow().cycle();
 
-        let vic_irq = vic20.borrow_mut().cycle(mpu.debugger_refmut());
+        let vic_irq = vic20.borrow_mut().cycle(cycles, mpu.debugger_refmut());
 
         if let Some(autoload_state) = &mut autoload_state {
             autoload_state.cycle();
@@ -163,5 +162,6 @@ fn main() {
             // scale callback by 1000 because our loop is so fast
             loop_helper.loop_sleep();
         }
+        cycles += 1;
     }
 }
