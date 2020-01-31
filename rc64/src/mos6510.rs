@@ -531,6 +531,7 @@ impl MOS6510 {
                     *remaining_cycles = remaining_cycles.saturating_sub(1);
                     if *remaining_cycles == 0 {
                         self.state = State::CheckInterrupts { interrupts: *interrupts };
+                        continue;
                     }
                     return;
                 }
@@ -759,13 +760,6 @@ impl MOS6510 {
 
         let effective_addr_load = effective_addr.map(|a| self.mem.read(a.effective));
 
-        //debug_assert_eq!(self.state, State::BeginInstr);
-        self.state = State::ExecInstr {
-            remaining_cycles: instr.cycles(effective_addr),
-            instr,
-            interrupts: *self.state.interrupts(),
-        };
-
         struct InstrMatchArgs<'a> {
             instr: Instr,
             reg: &'a mut Regs,
@@ -785,7 +779,7 @@ impl MOS6510 {
         }
 
         // call to the macro-transformed fn instr_match below
-        let interrupt_pending = instr_match(InstrMatchArgs {
+        let (interrupt_pending, branch_outcome) = instr_match(InstrMatchArgs {
             instr,
             reg: &mut self.reg,
             effective_addr: effective_addr.map(|v| v.effective),
@@ -796,23 +790,36 @@ impl MOS6510 {
 
         self.state.interrupts().update_merge(&interrupt_pending);
 
+        //debug_assert_eq!(self.state, State::BeginInstr);
+        self.state = State::ExecInstr {
+            remaining_cycles: instr.cycles(effective_addr, branch_outcome),
+            instr,
+            interrupts: *self.state.interrupts(),
+        };
+
         if let Some(pc) = next_pc {
             self.reg.pc = pc;
         }
 
         macro_rules! branch {
-            ($flag:tt == $flag_set:expr, $pcr_offset:expr, $args:expr) => {{
+            ($flag:tt == $flag_set:expr, $pcr_offset:expr, $args:expr, $branch_outcome:ident) => {{
                 let args = $args;
                 let pcr_offset: i8 = $pcr_offset;
                 let flag_set: bool = $flag_set != 0;
                 if args.reg.p.contains(Flags::$flag) == flag_set {
                     *args.next_pc = Some(args.reg.pc_r_add(pcr_offset));
+                    $branch_outcome = Some(instr::BranchOutcome::Taken);
+                } else {
+                    $branch_outcome = Some(instr::BranchOutcome::NotTaken);
                 }
             }};
         }
 
         #[gen_instr_match]
-        fn instr_match(mut args: InstrMatchArgs) -> InterruptPending {
+        fn instr_match(mut args: InstrMatchArgs) -> (InterruptPending, Option<instr::BranchOutcome>) {
+            let mut interrupt_pending = InterruptPending::default();
+            let mut branch_outcome = None;
+
             match args.instr {
                 // Sources http://www.obelisk.me.uk/6502/instructions.html
                 //         https://www.masswerk.at/6502/6502_instruction_set.html
@@ -1029,21 +1036,21 @@ impl MOS6510 {
                 // processor status.
 
                 // BCC 	Branch if carry flag clear
-                Instr(BCC, PCr(o)) => branch!(CARRY == 0, o, args),
+                Instr(BCC, PCr(o)) => branch!(CARRY == 0, o, args, branch_outcome),
                 // BCS 	Branch if carry flag set
-                Instr(BCS, PCr(o)) => branch!(CARRY == 1, o, args),
+                Instr(BCS, PCr(o)) => branch!(CARRY == 1, o, args, branch_outcome),
                 // BEQ 	Branch if zero flag set
-                Instr(BEQ, PCr(o)) => branch!(ZERO == 1, o, args),
+                Instr(BEQ, PCr(o)) => branch!(ZERO == 1, o, args, branch_outcome),
                 // BMI 	Branch if negative flag set
-                Instr(BMI, PCr(o)) => branch!(NEG == 1, o, args),
+                Instr(BMI, PCr(o)) => branch!(NEG == 1, o, args, branch_outcome),
                 // BNE 	Branch if zero flag clear
-                Instr(BNE, PCr(o)) => branch!(ZERO == 0, o, args),
+                Instr(BNE, PCr(o)) => branch!(ZERO == 0, o, args, branch_outcome),
                 // BPL 	Branch if negative flag clear
-                Instr(BPL, PCr(o)) => branch!(NEG == 0, o, args),
+                Instr(BPL, PCr(o)) => branch!(NEG == 0, o, args, branch_outcome),
                 // BVC 	Branch if overflow flag clear
-                Instr(BVC, PCr(o)) => branch!(OVFL == 0, o, args),
+                Instr(BVC, PCr(o)) => branch!(OVFL == 0, o, args, branch_outcome),
                 // BVS 	Branch if overflow flag set
-                Instr(BVS, PCr(o)) => branch!(OVFL == 1, o, args),
+                Instr(BVS, PCr(o)) => branch!(OVFL == 1, o, args, branch_outcome),
 
                 /***************** Status Flag Changes ******************/
                 // The following instructions change the values of specific status flags.
@@ -1069,13 +1076,11 @@ impl MOS6510 {
                 // BRK 	Force an interrupt 	B
                 Instr(BRK, Imp) => {
                     // https://www.c64-wiki.com/wiki/BRK
-                    let mut pending = InterruptPending::default();
-                    pending.irq = true;
+                    interrupt_pending.irq = true;
                     // BRK Increases PC by 2, but length of BRK is only 1
                     *args.next_pc = args.next_pc.and_then(|pc| pc.checked_add(1));
                     args.reg.p.insert(Flags::BRK);
-                    return pending;
-                },
+                }
                 // NOP 	No Operation
                 Instr(NOP, Imp) => (),
                 // RTI 	Return from Interrupt 	All
@@ -1092,7 +1097,7 @@ impl MOS6510 {
                 _ => panic!("unimplemented instruction: {}", args.instr),
             }
 
-            InterruptPending::default()
+            (interrupt_pending, branch_outcome)
         }
     }
 }
