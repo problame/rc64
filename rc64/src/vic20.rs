@@ -281,7 +281,7 @@ pub trait RasterBreakpointBackend {
 
 impl<T> RasterBreakpointBackend for VIC20<T> {
     fn status_dump(&self) -> String {
-        format!("regs={{{:?}}}", self.regs)
+        format!("x={} regs={{{:?}}}", self.x, self.regs)
     }
 
     fn add_raster_breakpoint(&mut self, line: usize) {
