@@ -60,6 +60,7 @@ pub struct VIC20<T> {
     raster_breakpoints: HashSet<usize>,
     raster_break_all: bool,
     highlight_raster_beam: bool,
+    cycles: usize,
 }
 
 // 9.5cycles * 8px
@@ -96,6 +97,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             raster_breakpoints: HashSet::new(),
             raster_break_all: false,
             highlight_raster_beam: false,
+            cycles: 0,
         }
     }
 
@@ -191,6 +193,15 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             }
         }
 
+        assert!(self.x != X_START || self.cycles % 63 == 0);
+        assert!(
+            self.y() != 0 || (self.cycles / 63) % 312 == 0,
+            "self.y()={} != 0 || (self.cycles={} / 63) % 312 == 0",
+            self.y(),
+            self.cycles
+        );
+
+        self.cycles += 1;
         self.x += PIXELS_PER_CYCLE as isize;
         if self.x >= SCREEN_WIDTH as isize + X_START {
             assert_eq!(self.x, SCREEN_WIDTH as isize + X_START);
