@@ -57,6 +57,7 @@ pub struct VIC20<T> {
     regs: Registers,
     x: isize,
     // No explicit `y: usize`, stored in VIC-registers, see functions VIC20::{y,inc_y,reset_y}
+    y: usize,
     raster_breakpoints: HashSet<usize>,
     raster_break_all: bool,
     highlight_raster_beam: bool,
@@ -94,6 +95,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             screen,
             regs: Registers::default(),
             x: X_START,
+            y: 0,
             raster_breakpoints: HashSet::new(),
             raster_break_all: false,
             highlight_raster_beam: false,
@@ -194,7 +196,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         }
 
         assert!(self.x != X_START || self.cycles % 63 == 0);
-        assert!(!(self.y() == 0 && self.x == X_START) || (self.cycles / 63) % 312 == 0,);
+        assert!(!(self.y() == 0 && self.x == X_START) || self.cycles % (63 * 312) == 0);
 
         self.cycles += 1;
         self.x += PIXELS_PER_CYCLE as isize;
@@ -240,8 +242,12 @@ impl<T> VIC20<T> {
     }
 
     fn y(&self) -> usize {
-        (self.regs.raster_counter as usize)
-            | if self.regs.control_register_1.contains(ControlRegister1::RST8) { 0b1_0000_0000 } else { 0 }
+        let y = (self.regs.raster_counter as usize)
+            | if self.regs.control_register_1.contains(ControlRegister1::RST8) { 0b1_0000_0000 } else { 0 };
+
+        assert_eq!(self.y, y, "self.y={:#b}, y={:#b}", self.y, y);
+
+        y
     }
 
     fn inc_y(&mut self) {
@@ -250,11 +256,17 @@ impl<T> VIC20<T> {
         cur += 1;
         self.regs.raster_counter = (cur & 0xff) as u8;
         self.regs.control_register_1.set(ControlRegister1::RST8, (cur & 0x100) != 0);
+
+        self.y = self.y.overflowing_add(1).0;
+        assert_eq!(self.y(), self.y);
     }
 
     fn reset_y(&mut self) {
         self.regs.raster_counter = 0;
         self.regs.control_register_1.remove(ControlRegister1::RST8);
+
+        self.y = 0;
+        assert_eq!(self.y(), self.y);
     }
 
     fn highlight_next_beam_position(&self) {

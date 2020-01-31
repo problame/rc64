@@ -289,7 +289,10 @@ impl<T> MemoryArea for VIC20<T> {
                 // never commit bit 8 on a write, we track that in raster_interrupt_line
                 // and when reading this cr, we want the read to reflect the current raster line
                 // which is managed by VIC20::inc_y
-                cr.remove(ControlRegister1::RST8);
+                cr.set(
+                    ControlRegister1::RST8,
+                    self.regs.control_register_1.contains(ControlRegister1::RST8),
+                );
                 self.regs.control_register_1 = cr;
             }
             0x12 => {
