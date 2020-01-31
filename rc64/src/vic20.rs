@@ -185,7 +185,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             } else {
                 for px_pos in 0..8 {
                     let point = Point((self.x - X_START) as usize + px_pos, self.y());
-                    let color = Color::Black;
+                    let color = Color::White;
                     screen.set_px(point, color);
                 }
             }
