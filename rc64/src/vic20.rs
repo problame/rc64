@@ -194,12 +194,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         }
 
         assert!(self.x != X_START || self.cycles % 63 == 0);
-        assert!(
-            self.y() != 0 || (self.cycles / 63) % 312 == 0,
-            "self.y()={} != 0 || (self.cycles={} / 63) % 312 == 0",
-            self.y(),
-            self.cycles
-        );
+        assert!(!(self.y() == 0 && self.x == X_START) || (self.cycles / 63) % 312 == 0,);
 
         self.cycles += 1;
         self.x += PIXELS_PER_CYCLE as isize;
