@@ -45,6 +45,8 @@ impl Minifb {
 impl ScreenBackend for Minifb {
     fn set_px(&mut self, p: Point, col: Color) {
         let mut buf = self.fb_buf.lock();
+        assert!(p.0 < SCREEN_WIDTH);
+        assert!(p.1 < SCREEN_HEIGHT);
         buf[p.1 * SCREEN_WIDTH + p.0] = ARGB::from(col).0;
     }
 }
