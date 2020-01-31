@@ -128,8 +128,8 @@ impl<T: AsRef<[u8]>> MemoryView<T> {
 
     pub fn read(&self, addr: U14) -> U12 {
         let color = {
-            let color_idx = u16::from(addr) & ((1 << 8) - 1);
-            U4(self.color_ram.borrow().read(color_idx) & ((1 << 4) - 1))
+            let color_idx = u16::from(addr) & 0b11_1111_1111;
+            U4(self.color_ram.borrow().read(color_idx) & 0b1111)
         };
         let data = self.read_data(addr);
         U12::from((color, data))
