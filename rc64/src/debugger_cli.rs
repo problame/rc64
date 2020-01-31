@@ -10,6 +10,7 @@ pub struct DebuggerCli {
     rl: rustyline::Editor<()>,
     last_input: String,
     vic_status_dump: bool,
+    cycles_at_last_debug_prompt: u64,
 }
 
 impl Default for DebuggerCli {
@@ -18,11 +19,13 @@ impl Default for DebuggerCli {
             rl: rustyline::Editor::<()>::new(),
             last_input: "".to_owned(),
             vic_status_dump: false,
+            cycles_at_last_debug_prompt: 0,
         }
     }
 }
 
 impl DebuggerCli {
+    #[allow(clippy::cognitive_complexity)]
     fn do_loop(
         &mut self,
         mos: &mos6510::MOS6510,
@@ -34,11 +37,17 @@ impl DebuggerCli {
             let cycles = { mos.debugger_refmut().cycles() };
             let mut status = String::new();
             use std::fmt::Write;
-            writeln!(&mut status, "cycle #{}", cycles);
-            writeln!(&mut status, "MOS REGS {}", mos.reg());
-            writeln!(&mut status, "MOS STATE: {}", mos.state());
+            writeln!(
+                &mut status,
+                "cycle #{} ({} since last prompt)",
+                cycles,
+                cycles - self.cycles_at_last_debug_prompt
+            )
+            .unwrap();
+            writeln!(&mut status, "MOS REGS {}", mos.reg()).unwrap();
+            writeln!(&mut status, "MOS STATE: {}", mos.state()).unwrap();
             if self.vic_status_dump {
-                writeln!(&mut status, "VIC DUMP: {}", vic.status_dump());
+                writeln!(&mut status, "VIC DUMP: {}", vic.status_dump()).unwrap();
             }
             let status = status.trim_end();
 
@@ -349,6 +358,8 @@ impl mos6510::DebuggerUI for DebuggerCli {
         vic: &mut dyn RasterBreakpointBackend,
     ) -> Option<mos6510::DebuggerMOSMutation> {
         assert_eq!(action, mos6510::DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt);
-        self.do_loop(mos, vic)
+        let ret = self.do_loop(mos, vic);
+        self.cycles_at_last_debug_prompt = mos.debugger_refmut().cycles();
+        ret
     }
 }
