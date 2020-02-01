@@ -152,9 +152,8 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             match (
                 self.regs.control_register_1.contains(ControlRegister1::BMM),
                 self.regs.control_register_1.contains(ControlRegister1::ECM),
-                self.regs.control_register_2.contains(ControlRegister2::MCM),
             ) {
-                (false, false, false) => {
+                (false, false) => {
                     let char_row = y / 8;
                     let char_col = x / 8;
 
@@ -172,12 +171,37 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                     let fg = Color::try_from(color).unwrap();
                     let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
 
-                    self.draw_horizontal(bm.iter().map(|is_fg| match is_fg {
-                        true => fg,
-                        false => bg,
-                    }))
+                    if self.regs.control_register_2.contains(ControlRegister2::MCM) {
+                        let mut pairs = Vec::new();
+                        bm.iter().fold(None, |acc, elt| match acc {
+                            None => Some(elt),
+                            Some(acc) => {
+                                pairs.push((acc, elt));
+                                None
+                            }
+                        });
+
+                        let bg1 = Color::try_from(self.regs.background_color[1] % 16).unwrap();
+                        let bg2 = Color::try_from(self.regs.background_color[2] % 16).unwrap();
+                        self.draw_horizontal(
+                            pairs
+                                .iter()
+                                .map(|pair| match pair {
+                                    (false, false) => bg,
+                                    (false, true) => bg1,
+                                    (true, false) => bg2,
+                                    (true, true) => fg,
+                                })
+                                .flat_map(|col| vec![col, col]),
+                        )
+                    } else {
+                        self.draw_horizontal(bm.iter().map(|is_fg| match is_fg {
+                            true => fg,
+                            false => bg,
+                        }))
+                    }
                 }
-                _ => unimplemented!("Only support standard text mode for now"),
+                _ => unimplemented!("Only support high-res/multicolor text mode for now"),
             }
         } else if inside_border_zone {
             self.draw_horizontal(
