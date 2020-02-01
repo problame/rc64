@@ -2,7 +2,6 @@ mod mem;
 mod registers;
 
 use self::mem::MemoryView;
-use self::mem::U14;
 use self::registers::{ControlRegister1, ControlRegister2, InterruptEnabled, InterruptRegister};
 use crate::color_ram::ColorRAM;
 use crate::ram::RAM;
@@ -158,16 +157,22 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 (false, false, false) => {
                     let char_row = y / 8;
                     let char_col = x / 8;
-                    let (color, ch) =
-                        self.mem.read(U14::try_from(0x400 + (char_row * 40 + char_col)).unwrap()).into();
-                    // find ch in char rom
-                    let bm =
-                        self.mem.read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
+
+                    // c-access
+                    let vm = self.regs.memory_pointers.video_matrix_base();
+                    let vc = char_row * 40 + char_col;
+                    let (color, ch) = self.mem.read(vm + vc).into();
+
+                    // g-access
+                    let cb = self.regs.memory_pointers.character_generator_base();
+                    let d = (ch as usize) << 3;
+                    let rc = y & 0b111;
+                    let bm = BitVec::from_bytes(&[self.mem.read_data(cb + d + rc)]);
 
                     let fg = Color::try_from(color).unwrap();
                     let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
 
-                    self.draw_horizontal(BitVec::from_bytes(&[bm]).iter().map(|is_fg| match is_fg {
+                    self.draw_horizontal(bm.iter().map(|is_fg| match is_fg {
                         true => fg,
                         false => bg,
                     }))
@@ -225,6 +230,9 @@ impl<T: AsRef<[u8]>> VIC20<T> {
 
 impl<T> VIC20<T> {
     pub fn update_banking(&mut self, state: mem::BankingState) {
+        if self.mem.banking_state != state {
+            println!("VIC banking update {:?} -> {:?}", self.mem.banking_state, state);
+        }
         self.mem.banking_state = state;
     }
 

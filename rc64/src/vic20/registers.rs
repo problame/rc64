@@ -117,6 +117,7 @@
 
 use super::VIC20;
 use crate::mos6510::{MemoryArea, WriteResult};
+use crate::vic20::mem::U14;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Coordinate {
@@ -133,7 +134,7 @@ pub(super) struct Registers {
     pub raster_counter: u8,
 
     pub light_pen: Coordinate,
-    pub memory_pointers: u8,
+    pub memory_pointers: MemoryPointers,
 
     pub interrupt_register: InterruptRegister,
     pub interrupt_enabled: InterruptEnabled,
@@ -214,6 +215,26 @@ bitflags! {
     }
 }
 
+bitflags! {
+    #[derive(Default)]
+    pub(super) struct MemoryPointers: u8 {
+        const VM = 0b1111_000_0;
+        const CB = 0b0000_111_0;
+    }
+}
+
+use std::convert::TryFrom;
+
+impl MemoryPointers {
+    pub fn video_matrix_base(&self) -> U14 {
+        U14::try_from(((*self & MemoryPointers::VM).bits() as u16) << (-4 + 10)).unwrap()
+    }
+
+    pub fn character_generator_base(&self) -> U14 {
+        U14::try_from(((*self & MemoryPointers::CB).bits() as u16) << (-1 + 11)).unwrap()
+    }
+}
+
 impl<T> MemoryArea for VIC20<T> {
     fn read(&self, addr: u16) -> u8 {
         let addr = addr as usize & 0xff;
@@ -235,7 +256,7 @@ impl<T> MemoryArea for VIC20<T> {
             0x15 => self.regs.sprite_enabled,
             0x16 => self.regs.control_register_2.bits() | 0b1100_0000,
             0x17 => self.regs.sprite_expansion.y,
-            0x18 => self.regs.memory_pointers | 0b0000_0001,
+            0x18 => self.regs.memory_pointers.bits() | 0b0000_0001,
             0x19 => self.regs.interrupt_register.bits() | 0b0111_0000,
             0x1a => self.regs.interrupt_enabled.bits() | 0b1111_0000,
             0x1b => self.regs.sprite_data_priority,
@@ -304,7 +325,7 @@ impl<T> MemoryArea for VIC20<T> {
             0x15 => self.regs.sprite_enabled = val,
             0x16 => self.regs.control_register_2 = ControlRegister2::from_bits_truncate(val),
             0x17 => self.regs.sprite_expansion.y = val,
-            0x18 => self.regs.memory_pointers = val,
+            0x18 => self.regs.memory_pointers = MemoryPointers::from_bits_truncate(val),
             0x19 => {
                 // interrupt is acknowledged with a 1 bit
                 self.regs.interrupt_register =
