@@ -9,8 +9,10 @@ use crate::ram::RAM;
 use crate::rom::ROM;
 use crate::utils::R2C;
 use crate::vic20::registers::Registers;
+use bit_vec::BitVec;
 use std::collections::HashSet;
 use std::convert::TryFrom;
+use std::iter;
 
 pub use self::mem::BankingState;
 
@@ -143,55 +145,41 @@ impl<T: AsRef<[u8]>> VIC20<T> {
 
         assert!(!inside_content_zone || inside_border_zone);
 
-        {
-            let mut screen = self.screen.borrow_mut();
-            if inside_content_zone {
-                // Coordinate transformation
-                let x = (self.x - content_start_x) as usize;
-                let y = self.y() - content_start_y;
+        if inside_content_zone {
+            // Coordinate transformation
+            let x = (self.x - content_start_x) as usize;
+            let y = self.y() - content_start_y;
 
-                match (
-                    self.regs.control_register_1.contains(ControlRegister1::BMM),
-                    self.regs.control_register_1.contains(ControlRegister1::ECM),
-                    self.regs.control_register_2.contains(ControlRegister2::MCM),
-                ) {
-                    (false, false, false) => {
-                        let char_row = y / 8;
-                        let char_col = x / 8;
-                        let (color, ch) = self
-                            .mem
-                            .read(U14::try_from(0x400 + (char_row * 40 + char_col)).unwrap())
-                            .into();
-                        // find ch in char rom
-                        let bm = self
-                            .mem
-                            .read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
+            match (
+                self.regs.control_register_1.contains(ControlRegister1::BMM),
+                self.regs.control_register_1.contains(ControlRegister1::ECM),
+                self.regs.control_register_2.contains(ControlRegister2::MCM),
+            ) {
+                (false, false, false) => {
+                    let char_row = y / 8;
+                    let char_col = x / 8;
+                    let (color, ch) =
+                        self.mem.read(U14::try_from(0x400 + (char_row * 40 + char_col)).unwrap()).into();
+                    // find ch in char rom
+                    let bm =
+                        self.mem.read_data(U14::try_from(0x1000 + (8 * (ch as usize)) + (y % 8)).unwrap());
 
-                        let fg = Color::try_from(color).unwrap();
-                        let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
+                    let fg = Color::try_from(color).unwrap();
+                    let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
 
-                        for px_pos in 0..8 {
-                            let bitpos = (8 - px_pos) - 1;
-                            let is_fg = bm & (1 << bitpos) != 0;
-                            let color = if is_fg { fg } else { bg };
-                            screen.set_px(Point((self.x - X_START) as usize + px_pos, self.y()), color);
-                        }
-                    }
-                    _ => unimplemented!("Only support standard text mode for now"),
+                    self.draw_horizontal(BitVec::from_bytes(&[bm]).iter().map(|is_fg| match is_fg {
+                        true => fg,
+                        false => bg,
+                    }))
                 }
-            } else if inside_border_zone {
-                for px_pos in 0..8 {
-                    let point = Point((self.x - X_START) as usize + px_pos, self.y());
-                    let border_color = Color::try_from(self.regs.border_color.bits()).unwrap();
-                    screen.set_px(point, border_color)
-                }
-            } else {
-                for px_pos in 0..8 {
-                    let point = Point((self.x - X_START) as usize + px_pos, self.y());
-                    let color = Color::White;
-                    screen.set_px(point, color);
-                }
+                _ => unimplemented!("Only support standard text mode for now"),
             }
+        } else if inside_border_zone {
+            self.draw_horizontal(
+                iter::repeat(Color::try_from(self.regs.border_color.bits()).unwrap()).take(8),
+            )
+        } else {
+            self.draw_horizontal(iter::repeat(Color::White).take(8))
         }
 
         assert!(self.x != X_START || cycles % 63 == 0);
@@ -273,11 +261,15 @@ impl<T> VIC20<T> {
     }
 
     fn highlight_next_beam_position(&self) {
-        for px_pos in 0..8 {
-            let point = Point((self.x - X_START) as usize + px_pos, self.y());
-            let color = Color::Yellow;
-            self.screen.borrow_mut().set_px(point, color);
-        }
+        self.draw_horizontal(iter::repeat(Color::Yellow).take(8))
+    }
+
+    fn draw_horizontal<I: Iterator<Item = Color>>(&self, cols: I) {
+        let mut screen = self.screen.borrow_mut();
+        let starting_point = Point((self.x - X_START) as usize, self.y());
+        iter::successors(Some(starting_point), |p| Some(Point(p.0 + 1, p.1)))
+            .zip(cols.into_iter())
+            .for_each(|(point, col)| screen.set_px(point, col))
     }
 }
 
