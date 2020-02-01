@@ -362,9 +362,9 @@ impl Register for ControlTimer {
                 // TODO serial port output mode
                 // TODO tod freq
 
-                if timer.running {
-                    println!("Starting {:#?}", timer);
-                }
+                // if timer.running {
+                //     println!("Starting {:#?}", timer);
+                // }
             }
             TimerInputMode::B(_) => unimpl!(),
         }
