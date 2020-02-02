@@ -8,7 +8,6 @@ use crate::ram::RAM;
 use crate::rom::ROM;
 use crate::utils::R2C;
 use crate::vic20::registers::Registers;
-use bit_vec::BitVec;
 use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::iter;
@@ -166,34 +165,42 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                     let cb = self.regs.memory_pointers.character_generator_base();
                     let d = (ch as usize) << 3;
                     let rc = y & 0b111;
-                    let bm = BitVec::from_bytes(&[self.mem.read_data(cb + d + rc)]);
+
+                    use bitvec::prelude::*;
+                    let bm: u8 = self.mem.read_data(cb + d + rc);
+                    let bm = bm.bits::<Msb0>();
 
                     let fg = Color::try_from(color).unwrap();
                     let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
 
                     if self.regs.control_register_2.contains(ControlRegister2::MCM) {
-                        let mut pairs = Vec::new();
-                        bm.iter().fold(None, |acc, elt| match acc {
-                            None => Some(elt),
-                            Some(acc) => {
-                                pairs.push((acc, elt));
-                                None
-                            }
-                        });
+                        let pairs = {
+                            let mut bm = bm.iter();
+                            let pairs = [
+                                (bm.next().unwrap(), bm.next().unwrap()),
+                                (bm.next().unwrap(), bm.next().unwrap()),
+                                (bm.next().unwrap(), bm.next().unwrap()),
+                                (bm.next().unwrap(), bm.next().unwrap()),
+                            ];
+                            assert!(bm.next().is_none());
+                            pairs
+                        };
 
                         let bg1 = Color::try_from(self.regs.background_color[1] % 16).unwrap();
                         let bg2 = Color::try_from(self.regs.background_color[2] % 16).unwrap();
-                        self.draw_horizontal(
-                            pairs
-                                .iter()
-                                .map(|pair| match pair {
-                                    (false, false) => bg,
-                                    (false, true) => bg1,
-                                    (true, false) => bg2,
-                                    (true, true) => fg,
-                                })
-                                .flat_map(|col| vec![col, col]),
-                        )
+
+                        let mut colors = [bg, bg, bg, bg, bg, bg, bg, bg];
+                        for (i, pair) in pairs.iter().enumerate() {
+                            let color = match pair {
+                                (false, false) => bg,
+                                (false, true) => bg1,
+                                (true, false) => bg2,
+                                (true, true) => fg,
+                            };
+                            colors[2 * i] = color;
+                            colors[2 * i + 1] = color;
+                        }
+                        self.draw_horizontal_slice(&colors);
                     } else {
                         self.draw_horizontal(bm.iter().map(|is_fg| match is_fg {
                             true => fg,
@@ -204,11 +211,13 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 _ => unimplemented!("Only support high-res/multicolor text mode for now"),
             }
         } else if inside_border_zone {
-            self.draw_horizontal(
-                iter::repeat(Color::try_from(self.regs.border_color.bits()).unwrap()).take(8),
-            )
+            let c = Color::try_from(self.regs.border_color.bits()).unwrap();
+            let colors = [c, c, c, c, c, c, c, c];
+            self.draw_horizontal_slice(&colors)
         } else {
-            self.draw_horizontal(iter::repeat(Color::White).take(8))
+            use Color::White as W;
+            const COLORS: [Color; 8] = [W, W, W, W, W, W, W, W];
+            self.draw_horizontal_slice(&COLORS)
         }
 
         assert!(self.x != X_START || cycles % 63 == 0);
@@ -293,15 +302,26 @@ impl<T> VIC20<T> {
     }
 
     fn highlight_next_beam_position(&self) {
-        self.draw_horizontal(iter::repeat(Color::Yellow).take(8))
+        use Color::Yellow as Y;
+        const COLORS: [Color; 8] = [Y, Y, Y, Y, Y, Y, Y, Y];
+        self.draw_horizontal_slice(&COLORS)
     }
 
-    fn draw_horizontal<I: Iterator<Item = Color>>(&self, cols: I) {
+    fn draw_horizontal<I: ExactSizeIterator<Item = Color>>(&self, cols: I) {
         let mut screen = self.screen.borrow_mut();
         let starting_point = Point((self.x - X_START) as usize, self.y());
         iter::successors(Some(starting_point), |p| Some(Point(p.0 + 1, p.1)))
             .zip(cols.into_iter())
             .for_each(|(point, col)| screen.set_px(point, col))
+    }
+
+    #[inline(always)]
+    fn draw_horizontal_slice(&self, colors: &[Color]) {
+        let mut screen = self.screen.borrow_mut();
+        let start = Point((self.x - X_START) as usize, self.y());
+        for (i, c) in colors.iter().cloned().enumerate() {
+            screen.set_px(Point(start.0 + i, start.1), c)
+        }
     }
 }
 
