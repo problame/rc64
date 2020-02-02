@@ -1,3 +1,4 @@
+pub mod framebuffer;
 mod mem;
 mod registers;
 
@@ -12,6 +13,7 @@ use std::collections::HashSet;
 use std::convert::TryFrom;
 use std::iter;
 
+use self::framebuffer::ARGB;
 pub use self::mem::BankingState;
 
 use num_enum::TryFromPrimitive;
@@ -47,13 +49,9 @@ impl From<self::mem::U4> for Color {
 #[derive(Debug, Clone, Copy)]
 pub struct Point(pub usize, pub usize);
 
-pub trait ScreenBackend {
-    fn set_px(&mut self, p: Point, col: Color);
-}
-
 pub struct VIC20<T> {
     mem: MemoryView<T>,
-    screen: R2C<dyn ScreenBackend>,
+    screen: framebuffer::Writer,
     regs: Registers,
     x: isize,
     // No explicit `y: usize`, stored in VIC-registers, see functions VIC20::{y,inc_y,reset_y}
@@ -87,7 +85,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         char_rom: ROM<T>,
         ram: R2C<RAM>,
         color_ram: R2C<ColorRAM>,
-        screen: R2C<dyn ScreenBackend>,
+        screen: framebuffer::Writer,
     ) -> Self {
         VIC20 {
             mem: MemoryView::new(char_rom, ram, color_ram),
@@ -301,26 +299,24 @@ impl<T> VIC20<T> {
         assert_eq!(self.y(), self.y);
     }
 
-    fn highlight_next_beam_position(&self) {
+    fn highlight_next_beam_position(&mut self) {
         use Color::Yellow as Y;
         const COLORS: [Color; 8] = [Y, Y, Y, Y, Y, Y, Y, Y];
         self.draw_horizontal_slice(&COLORS)
     }
 
-    fn draw_horizontal<I: ExactSizeIterator<Item = Color>>(&self, cols: I) {
-        let mut screen = self.screen.borrow_mut();
+    fn draw_horizontal<I: ExactSizeIterator<Item = Color>>(&mut self, cols: I) {
         let starting_point = Point((self.x - X_START) as usize, self.y());
         iter::successors(Some(starting_point), |p| Some(Point(p.0 + 1, p.1)))
             .zip(cols.into_iter())
-            .for_each(|(point, col)| screen.set_px(point, col))
+            .for_each(|(point, col)| self.screen.set_px(point, ARGB::from(col)))
     }
 
     #[inline(always)]
-    fn draw_horizontal_slice(&self, colors: &[Color]) {
-        let mut screen = self.screen.borrow_mut();
+    fn draw_horizontal_slice(&mut self, colors: &[Color]) {
         let start = Point((self.x - X_START) as usize, self.y());
         for (i, c) in colors.iter().cloned().enumerate() {
-            screen.set_px(Point(start.0 + i, start.1), c)
+            self.screen.set_px(Point(start.0 + i, start.1), ARGB::from(c))
         }
     }
 }

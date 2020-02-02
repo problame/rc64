@@ -80,10 +80,15 @@ fn main() {
     let ram = r2c_new!(RAM::default());
     let color_ram = r2c_new!(ColorRAM::default());
 
-    let screen = r2c_new!(backend::fb_minifb::Minifb::new());
+    let (screen_buf_reader, screen_buf_updater) = vic20::framebuffer::new();
+    let screen = r2c_new!(backend::fb_minifb::Minifb::new(screen_buf_reader));
 
-    let vic20 =
-        r2c_new!(vic20::VIC20::new(rom::stock::CHAR_ROM, ram.clone(), color_ram.clone(), screen.clone()));
+    let vic20 = r2c_new!(vic20::VIC20::new(
+        rom::stock::CHAR_ROM,
+        ram.clone(),
+        color_ram.clone(),
+        screen_buf_updater
+    ));
 
     let keyboard_emulator = r2c_new!(EmulatedKeyboard::new());
 
