@@ -20,6 +20,7 @@ mod backend {
     pub(super) mod fb_minifb;
 }
 mod autoload;
+mod cycler;
 mod debugger_cli;
 
 use crate::cia::keyboard::EmulatedKeyboard;
@@ -54,6 +55,15 @@ struct Args {
 
     #[structopt(help = "autostart prg file")]
     prg: Option<PathBuf>,
+
+    #[structopt(long, help = "number of allowed slow cycles per second", default_value = "150000")]
+    slow_cycle_thresh: u64,
+
+    #[structopt(long, help = "disable clock-frequency emulation (full-speed mode)")]
+    disable_clock_freq_limit: bool,
+
+    #[structopt(long, help = "run for specified number of clock cycles, exit when reached")]
+    exit_after_cycles: Option<u64>,
 }
 
 fn main() {
@@ -118,22 +128,36 @@ fn main() {
         keyboard_emulator.clone(),
     );
 
-    use spin_sleep::LoopHelper;
-
-    let mut loop_helper = LoopHelper::builder().report_interval_s(1.0).build_with_target_rate(1_000.0f64); // scale by 1000
-
     let mut autoload_state = args
         .prg
         .map(|path| std::fs::read(path).expect("read PRG"))
         .map(|bytes| autoload::PRG::try_from(bytes).expect("parse PRG"))
         .map(|prg| autoload::AutloadState::new(prg, ram.clone(), keyboard_emulator.clone()));
 
+    let mut loop_helper = cycler::Cycler::new(cycler::Config {
+        guest_core_cps_hz: 1_000_000.0,
+        report_interval: Some(std::time::Duration::from_secs(1)),
+    });
+
     let mut cycles = 0;
+
+    let mut last_report: Option<cycler::Report> = None;
     loop {
-        if cycles % 1000 == 0 {
-            // scale callback by 1000 because our loop is so fast
-            loop_helper.loop_start();
+        if !args.disable_clock_freq_limit {
+            let report = loop_helper.cycle(cycles);
+            if let Some(delta) =
+                report.as_ref().and_then(|new| last_report.as_ref().and_then(|old| new.delta(&old)))
+            {
+                if delta.slow_cycles > args.slow_cycle_thresh {
+                    println!("slow cycles exceeded threshold {}: {:?}", args.slow_cycle_thresh, delta);
+                    loop_helper.reset_startup(cycles);
+                }
+            }
+            if let Some(report) = report {
+                last_report = Some(report);
+            }
         }
+
         debugger.borrow_mut().update_cycles(cycles);
 
         let cia_irq = cia1.borrow().cycle();
@@ -152,16 +176,12 @@ fn main() {
         }
         mpu.cycle(cia_irq.or(vic_irq), cia_nmi);
 
-        if let Some(r) = loop_helper.report_rate() {
-            let r = r / 1_000.0;
-            if r <= 0.95 || r >= 1.05 {
-                println!("Warning: Mcycles / sec = {:.?}", r);
+        cycles += 1;
+
+        if let Some(after_cycles) = args.exit_after_cycles {
+            if cycles >= after_cycles {
+                std::process::exit(0);
             }
         }
-        if cycles % 1000 == 0 {
-            // scale callback by 1000 because our loop is so fast
-            loop_helper.loop_sleep();
-        }
-        cycles += 1;
     }
 }
