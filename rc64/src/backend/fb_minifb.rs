@@ -21,7 +21,8 @@ impl Minifb {
                 let mut fb_winopts = WindowOptions::default();
                 fb_winopts.scale = minifb::Scale::X2;
                 let mut fb =
-                    Window::new("Test - ESC to exit", fb_buf.width(), fb_buf.height(), fb_winopts).unwrap();
+                    Window::new("rc64 - C64 Emulator", fb_buf.width(), fb_buf.height(), fb_winopts)
+                        .unwrap();
 
                 loop {
                     std::thread::sleep(std::time::Duration::from_micros(16666));

@@ -185,6 +185,7 @@ fn main() {
 
         if let Some(after_cycles) = args.exit_after_cycles {
             if cycles >= after_cycles {
+                eprintln!("exiting after:\n{} cycles\n{} executed instrs", cycles, mpu.applied_instrs());
                 std::process::exit(0);
             }
         }

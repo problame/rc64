@@ -21,6 +21,7 @@ pub struct MOS6510 {
     debugger: R2C<Debugger>,
     debugger_ui: R2C<dyn DebuggerUI>,
     pub keyboard_emulator: R2C<EmulatedKeyboard>,
+    pub applied_instrs: usize,
 }
 
 impl MOS6510 {
@@ -496,11 +497,16 @@ impl MOS6510 {
             debugger,
             debugger_ui,
             keyboard_emulator,
+            applied_instrs: 0,
         }
     }
 
     pub fn ram(&self) -> R2C<RAM> {
         self.ram.clone()
+    }
+
+    pub fn applied_instrs(&self) -> usize {
+        self.applied_instrs
     }
 
     pub fn inject_instr_on_next_fetch(&mut self, i: Instr) {
@@ -783,6 +789,8 @@ impl MOS6510 {
             next_pc: &mut next_pc,
             mem: &mut self.mem,
         });
+
+        self.applied_instrs += 1;
 
         self.state.interrupts().update_merge(interrupt_pending);
 

@@ -52,10 +52,13 @@ impl Writer {
 }
 
 impl Reader {
+    pub const fn width(&self) -> usize {
+        SCREEN_WIDTH
+    }
 
-    pub const fn width(&self) -> usize { SCREEN_WIDTH }
-
-    pub const fn height(&self) -> usize { SCREEN_HEIGHT }
+    pub const fn height(&self) -> usize {
+        SCREEN_HEIGHT
+    }
 
     pub fn as_argb_slice(&self) -> &[ARGB] {
         unsafe {
