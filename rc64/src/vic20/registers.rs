@@ -226,12 +226,12 @@ bitflags! {
 use std::convert::TryFrom;
 
 impl MemoryPointers {
-    pub fn video_matrix_base(&self) -> U14 {
-        U14::try_from(((*self & MemoryPointers::VM).bits() as u16) << (-4 + 10)).unwrap()
+    pub fn video_matrix_base(self) -> U14 {
+        U14::try_from(((self & MemoryPointers::VM).bits() as u16) << (-4 + 10)).unwrap()
     }
 
-    pub fn character_generator_base(&self) -> U14 {
-        U14::try_from(((*self & MemoryPointers::CB).bits() as u16) << (-1 + 11)).unwrap()
+    pub fn character_generator_base(self) -> U14 {
+        U14::try_from(((self & MemoryPointers::CB).bits() as u16) << (-1 + 11)).unwrap()
     }
 }
 

@@ -308,7 +308,7 @@ impl<T> VIC20<T> {
     fn draw_horizontal<I: ExactSizeIterator<Item = Color>>(&mut self, cols: I) {
         let starting_point = Point((self.x - X_START) as usize, self.y());
         iter::successors(Some(starting_point), |p| Some(Point(p.0 + 1, p.1)))
-            .zip(cols.into_iter())
+            .zip(cols)
             .for_each(|(point, col)| self.screen.set_px(point, ARGB::from(col)))
     }
 

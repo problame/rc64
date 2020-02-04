@@ -117,15 +117,20 @@ enum BankingStateUpdate {
 
 bitflags! {
     struct CpuControlLines: u8 {
+        #[allow(clippy::inconsistent_digit_grouping)]
         const LORAM = 0b00000_001;
+        #[allow(clippy::inconsistent_digit_grouping)]
         const HIRAM = 0b00000_010;
+        #[allow(clippy::inconsistent_digit_grouping)]
         const CHAREN = 0b00000_100;
     }
 }
 
 bitflags! {
     struct ExpansionPort: u8 {
+        #[allow(clippy::inconsistent_digit_grouping)]
         const GAME = 0b000000_01;
+        #[allow(clippy::inconsistent_digit_grouping)]
         const EXROM = 0b000000_10;
     }
 }
