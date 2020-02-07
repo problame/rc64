@@ -213,8 +213,8 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             let colors = [c, c, c, c, c, c, c, c];
             self.draw_horizontal_slice(&colors)
         } else {
-            use Color::White as W;
-            const COLORS: [Color; 8] = [W, W, W, W, W, W, W, W];
+            use Color::LightGrey3 as C;
+            const COLORS: [Color; 8] = [C, C, C, C, C, C, C, C];
             self.draw_horizontal_slice(&COLORS)
         }
 
