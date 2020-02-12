@@ -54,7 +54,7 @@ pub struct VIC20<T> {
     screen: framebuffer::Writer,
     regs: Registers,
     x: isize,
-    // No explicit `y: usize`, stored in VIC-registers, see functions VIC20::{y,inc_y,reset_y}
+    // The y encoded in regs is authoritative, this y is only for assertions.
     y: usize,
     raster_breakpoints: HashSet<usize>,
     raster_break_all: bool,
