@@ -90,6 +90,7 @@ stack all               dump entire stack page
 instrlog on|off         enable instruciton logging to console
 brk on|off              trap to debugger on BRK instr (doesn't affect handling of BRK)
 readmem HEXADDR         read memory at address
+loadtomem HEXADDR PATH  load file contents at PATH to RAM starting at HEXADDR
 inject HEX [HEX [HEX]]  inject raw instruction on next fetch cycle
 exec   HEX [HEX [HEX]]  exe raw instruction now
 press KEY ...           emulate simultaneous press of keys
