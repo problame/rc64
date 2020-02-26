@@ -301,9 +301,7 @@ pub trait PeripheralDevicesBackend {
     fn get_current_keyboard_matrix(&self) -> KeyboardMatrix;
 }
 
-impl<A: PeripheralDevicesBackend, B: PeripheralDevicesBackend> PeripheralDevicesBackend
-    for (R2C<A>, R2C<B>)
-{
+impl PeripheralDevicesBackend for (R2C<dyn PeripheralDevicesBackend>, R2C<dyn PeripheralDevicesBackend>) {
     fn get_current_keyboard_matrix(&self) -> KeyboardMatrix {
         match self {
             (a, b) => {

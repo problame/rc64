@@ -8,6 +8,7 @@ use crate::utils::R2C;
 use crate::vic20::RasterBreakpointBackend;
 pub use mem::*;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::iter::FromIterator;
 use std::rc::Rc;
 
@@ -41,7 +42,6 @@ impl MOS6510 {
 
 // https://www.c64-wiki.com/wiki/Processor_Status_Register
 bitflags! {
-    #[derive(Default)]
     struct Flags: u8 {
         const CARRY = 0b00_00_00_01;
         const ZERO = 0b00_00_00_10;
@@ -51,6 +51,12 @@ bitflags! {
         const UNUSED = 0b00_10_00_00;
         const OVFL = 0b01_00_00_00;
         const NEG = 0b10_00_00_00;
+    }
+}
+
+impl Default for Flags {
+    fn default() -> Self {
+        Flags::UNUSED
     }
 }
 
@@ -96,6 +102,8 @@ impl std::fmt::Display for Regs {
         write!(formatter, "PC:{:04x} SP:{:02x} A:{:02x} X:{:02x} Y:{:02x} P:{}", pc, sp, a, x, y, p)
     }
 }
+
+impl Regs {}
 
 const STACK_BOTTOM: u16 = 0x0100;
 const STACK_TOP: u16 = STACK_BOTTOM + 0xff;
@@ -158,42 +166,59 @@ impl Regs {
     // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
     #[inline]
     fn add_to_a_with_carry_and_set_carry(&mut self, v: u8) {
-        let pre_carry_u8: u8 = self.p.contains(Flags::CARRY) as u8;
-        let (carry, sign, overflow) = {
-            let sixth_lsbits_add = (self.a & 0b0111_1111) + (v & 0b0111_1111) + (pre_carry_u8);
-            let c6 = (sixth_lsbits_add & 0b1000_0000) != 0;
-            let a7 = self.a & 0b1000_0000 != 0;
-            let v7 = v & 0b1000_0000 != 0;
-            match (a7 as u8, v7 as u8, c6 as u8) {
-                (0, 0, 0) => (0, 0, 0), // No unsigned carry or signed overflow	0x50+0x10=0x60	80+16=96	80+16=96
-                (0, 0, 1) => (0, 1, 1), // No unsigned carry but signed overflow	0x50+0x50=0xa0	80+80=160	80+80=-96
-                (0, 1, 0) => (0, 1, 0), // No unsigned carry or signed overflow	0x50+0x90=0xe0	80+144=224	80+-112=-32
-                (0, 1, 1) => (1, 0, 0), // Unsigned carry, but no signed overflow	0x50+0xd0=0x120	80+208=288	80+-48=32
-                (1, 0, 0) => (0, 1, 0), // No unsigned carry or signed overflow	0xd0+0x10=0xe0	208+16=224	-48+16=-32
-                (1, 0, 1) => (1, 0, 0), // Unsigned carry but no signed overflow	0xd0+0x50=0x120	208+80=288	-48+80=32
-                (1, 1, 0) => (1, 0, 1), // Unsigned carry and signed overflow	0xd0+0x90=0x160	208+144=352	-48+-112=96
-                (1, 1, 1) => (1, 1, 0), // Unsigned carry, but no signed overflow	0xd0+0xd0=0x1a0	208+208=416	-48+-48=-96
-                (_, _, _) => unreachable!(),
+        assert!(!self.p.contains(Flags::DEC));
+
+        // do the addition in u16 space
+        let a = self.a as u16;
+        let v = v as u16;
+        let c = self.p.contains(Flags::CARRY) as u16;
+        let res_16 = a.wrapping_add(v).wrapping_add(c);
+
+        let a_out = (res_16 & 0xff) as u8;
+
+        // https://www.c64-wiki.com/wiki/ADC:
+        // > ADC affects 4 of the CPU's status flags:
+        // > The negative status flag is set if the result is negative, i.e. has it's most significant bit set.
+        // > The zero flag is set if the result is zero, or cleared if it is non-zero.
+
+        // > The overflow status flag is set if the operation results in an overflow.
+        //
+        // editor's note: two's complement numbers
+        // editor's tip: http://sandbox.mc.edu/~bennet/cs110/tc/add.html:
+        // > The rules for detecting overflow in a two's complement sum are simple:
+        // > If the sum of two positive numbers yields a negative result, the sum has overflowed.
+        // > If the sum of two negative numbers yields a positive result, the sum has overflowed.
+        // > Otherwise, the sum has not overflowed.
+        //
+        let ovfl_out = {
+            let a7 = a & 0b10_00_00_00 != 0;
+            let v7 = v & 0b10_00_00_00 != 0;
+            let r7 = res_16 & 0b10_00_00_00 != 0;
+            if r7 && (!a7 && !v7) {
+                true
+            } else if !r7 && (a7 && v7) {
+                true
+            } else {
+                false
             }
         };
-        let res_u16: u16 = (self.a as u16) + (pre_carry_u8 as u16) + (v as u16);
-        let res = (res_u16 & 0xff) as u8;
-        self.a = res;
-        self.p.set(Flags::ZERO, res == 0);
-        self.p.set(Flags::OVFL, overflow != 0);
-        assert_eq!(res_u16 > 0xff, carry != 0);
-        self.p.set(Flags::CARRY, carry != 0);
-        self.p.set(Flags::NEG, sign != 0);
+
+        // The carry flag is set if the addition resulted in an outgoing carry.
+        let carry_out = (res_16 & 0b1_00_00_00_00) != 0;
+
+        // apply
+        self.p.set(Flags::OVFL, ovfl_out);
+        self.p.set(Flags::CARRY, carry_out);
+        self.a = a_out;
+        self.set_nz_flags(a_out);
     }
 
     // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
     #[inline]
     fn sub_from_a_with_carry_and_set_carry(&mut self, v: u8) {
-        if cfg!(feature = "headless-chicken") {
-            self.add_to_a_with_carry_and_set_carry(!v); // TODO doesn't pass test case
-        } else {
-            unimplemented!()
-        }
+        assert!(!self.p.contains(Flags::DEC));
+        self.add_to_a_with_carry_and_set_carry(!v);
+        return;
     }
 
     #[inline]
@@ -215,7 +240,7 @@ impl Regs {
     fn cmp_impl(&mut self, minuend: u8, subtrahend: u8) {
         let (res, ovfl) = minuend.overflowing_sub(subtrahend); // Yes, carry not included
         self.p.set(Flags::ZERO, res == 0);
-        self.p.set(Flags::NEG, (res as i8) < 0);
+        self.p.set(Flags::NEG, res & 0b1000_0000 != 0);
         self.p.set(Flags::CARRY, !ovfl);
     }
 }
@@ -280,6 +305,7 @@ pub enum State {
     DecodedInstr { interrupts: InterruptPending, next_instr: Instr },
     ExecInstr { instr: Instr, remaining_cycles: usize, interrupts: InterruptPending },
     ExecInterruptStackInstrs { remaining_cycles: usize, interrupts: InterruptPending, reset_vec: ResetVec },
+    Stopped { interrupts: InterruptPending },
 }
 
 impl State {
@@ -299,6 +325,7 @@ impl State {
             ExecInstr { interrupts, .. } => interrupts,
             DecodedInstr { interrupts, .. } => interrupts,
             ExecInterruptStackInstrs { interrupts, .. } => interrupts,
+            Stopped { interrupts } => interrupts,
         }
     }
 }
@@ -323,15 +350,60 @@ impl Display for State {
                 "exec_interrupt_stack_instrs[{} cycles left] reset_vec={} irqs={{{}}}",
                 remaining_cycles, reset_vec, interrupts
             ),
+            State::Stopped { interrupts } => write!(f, "stopped irqs={{{}}}", interrupts),
         }
     }
 }
 
 use std::collections::HashSet;
 
+enum PCBreakpoint {
+    Simple(u16),
+    Conditional(u16, Box<dyn FnMut(&MOS6510) -> Option<DebuggerPostDecodePreApplyCbAction>>),
+}
+
+impl PCBreakpoint {
+    fn eval(&mut self, m: &MOS6510) -> Option<DebuggerPostDecodePreApplyCbAction> {
+        match self {
+            PCBreakpoint::Simple(pc) => {
+                if *pc == m.reg().pc {
+                    Some(DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt)
+                } else {
+                    None
+                }
+            }
+            PCBreakpoint::Conditional(pc, f) => {
+                if *pc == m.reg().pc {
+                    f(m)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+    fn pc(&self) -> u16 {
+        match self {
+            PCBreakpoint::Simple(pc) => *pc,
+            PCBreakpoint::Conditional(pc, _) => *pc,
+        }
+    }
+}
+
+impl PartialEq for PCBreakpoint {
+    fn eq(&self, o: &PCBreakpoint) -> bool {
+        self.pc() == o.pc()
+    }
+}
+impl Eq for PCBreakpoint {}
+impl std::hash::Hash for PCBreakpoint {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        state.write_u16(self.pc())
+    }
+}
+
 pub struct Debugger {
     cycles: u64,
-    pc_bps: HashSet<u16>,
+    pc_bps: HashMap<u16, PCBreakpoint>,
     ea_bps: HashSet<u16>,
     break_after_next_decode: bool,
     instr_logging_enabled: bool,
@@ -343,7 +415,7 @@ impl Debugger {
     pub fn new(vic: R2C<dyn RasterBreakpointBackend>) -> Self {
         Debugger {
             cycles: 0,
-            pc_bps: HashSet::default(),
+            pc_bps: HashMap::new(),
             ea_bps: HashSet::default(),
             break_after_next_decode: false,
             instr_logging_enabled: false,
@@ -354,9 +426,25 @@ impl Debugger {
 }
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug)]
+#[repr(usize)]
 pub enum DebuggerPostDecodePreApplyCbAction {
-    DoCycle,
-    BreakToDebugPrompt,
+    BreakToDebugPrompt = 1,
+    StopEmulatorAfterHavingReachedSelfJump = 2,
+}
+
+impl DebuggerPostDecodePreApplyCbAction {
+    fn most_drastic<'a, 'b: 'a>(
+        &'a self,
+        other: &'b DebuggerPostDecodePreApplyCbAction,
+    ) -> &'a DebuggerPostDecodePreApplyCbAction {
+        let s = *self as usize;
+        let o = *other as usize;
+        if s < o {
+            other
+        } else {
+            self
+        }
+    }
 }
 
 impl Debugger {
@@ -373,7 +461,16 @@ impl Debugger {
         self.break_after_next_decode = true;
     }
     pub fn add_pc_breakpoint(&mut self, pc: u16) {
-        self.pc_bps.insert(pc);
+        self.pc_bps.insert(pc, PCBreakpoint::Simple(pc));
+    }
+    pub fn add_pc_breakpoint_conditional<
+        F: 'static + FnMut(&MOS6510) -> Option<DebuggerPostDecodePreApplyCbAction>,
+    >(
+        &mut self,
+        pc: u16,
+        cond: F,
+    ) {
+        self.pc_bps.insert(pc, PCBreakpoint::Conditional(pc, Box::new(cond)));
     }
     pub fn del_pc_breakpoint(&mut self, pc: u16) {
         self.pc_bps.remove(&pc);
@@ -387,7 +484,7 @@ impl Debugger {
     }
 
     pub fn pc_breakpoints(&self) -> Vec<u16> {
-        self.pc_bps.iter().cloned().collect()
+        self.pc_bps.iter().map(|(_, b)| b.pc()).collect()
     }
 
     pub fn ea_breakpoints(&self) -> Vec<u16> {
@@ -398,7 +495,7 @@ impl Debugger {
         self.break_on_brk = enabled;
     }
 
-    fn post_decode_pre_apply_cb(&mut self, mos: &MOS6510) -> DebuggerPostDecodePreApplyCbAction {
+    fn post_decode_pre_apply_cb(&mut self, mos: &MOS6510) -> Option<DebuggerPostDecodePreApplyCbAction> {
         if self.instr_logging_enabled {
             println!("INSTRLOG: {} REG: {}", mos.state(), mos.reg()) // FIXME to DebuggerUI
         }
@@ -406,13 +503,17 @@ impl Debugger {
             && (mos.state.decoded_instr().unwrap().op() == crate::mos6510::instr::Op::BRK
                 || mos.reg.p.contains(Flags::BRK))
         {
-            return DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt;
+            return Some(DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt);
         }
-        if self.break_after_next_decode || self.pc_bps.contains(&mos.reg.pc) {
+
+        let action = self.pc_bps.get_mut(&mos.reg.pc).map(|b| b.eval(mos)).unwrap_or(None);
+
+        if self.break_after_next_decode || action.is_some() {
             self.break_after_next_decode = false;
-            DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt
+            let min_action = DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt;
+            Some(*min_action.most_drastic(&action.unwrap_or(min_action)))
         } else {
-            DebuggerPostDecodePreApplyCbAction::DoCycle
+            None
         }
     }
     fn ea_cb(&mut self, ea: u16) {
@@ -459,6 +560,13 @@ trait StackHelper {
         self.reg().sp += 1;
         let sp = self.reg().sp_abs();
         self.mem().read(sp)
+    }
+
+    fn pull_p(&mut self) -> Flags {
+        let mut p = Flags::from_bits(self.pull()).unwrap();
+        p.set(Flags::UNUSED, true); // UNUSED is always 1
+        p.remove(Flags::BRK); // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
+        p
     }
 
     fn pull_u16(&mut self) -> u16 {
@@ -560,7 +668,7 @@ impl MOS6510 {
                     self.state = State::Decode { interrupts };
                 }
                 State::CheckInterrupts { interrupts } => {
-                    if self.reg.p.contains(Flags::IRQD) {
+                    if self.reg.p.contains(Flags::IRQD) && !self.reg.p.contains(Flags::BRK) {
                         self.state = State::Fetch { interrupts: InterruptPending::default() };
                         return;
                     }
@@ -571,6 +679,7 @@ impl MOS6510 {
                             // println!("irq raised: {}", self.reg());
                             self.push_u16(self.reg.pc);
                             self.push(self.reg.p.bits());
+                            self.reg.p.set(Flags::BRK, false); // this completes BRK
                             self.reg.p.set(Flags::IRQD, true);
                             // "Next, the CPU takes 7 cycles to store its return address and processor status."
                             //  --https://codebase64.org/doku.php?id=base:double_irq_explained
@@ -606,6 +715,9 @@ impl MOS6510 {
                 State::DecodedInstr { next_instr, .. } => {
                     break next_instr;
                 }
+                State::Stopped { .. } => {
+                    return;
+                }
             }
         };
 
@@ -614,11 +726,16 @@ impl MOS6510 {
         let vic = self.debugger.borrow_mut().vic.clone();
         assert!(self.debugger.try_borrow().is_ok());
         let mos_mutation = match action {
-            DebuggerPostDecodePreApplyCbAction::DoCycle => None,
-            DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt => self
+            None => None,
+            Some(action @ DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt) => self
                 .debugger_ui
                 .borrow_mut()
                 .handle_post_decode_pre_apply_action(action, &self, &mut *vic.borrow_mut()),
+            Some(DebuggerPostDecodePreApplyCbAction::StopEmulatorAfterHavingReachedSelfJump) => {
+                eprintln!("self-jump reached, stopping emulator");
+                self.state = State::Stopped { interrupts: self.state.interrupts().clone() };
+                return;
+            }
         };
 
         // apply debugger action if necessary, may exit early
@@ -839,7 +956,9 @@ impl MOS6510 {
                 /***************** Load/Store Operations ******************/
                 // LDA 	Load Accumulator 	N,Z
                 Instr(LDA, Imm(i)) => args.reg.lda(i),
-                mi!(LDA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.effective_addr_load.unwrap()),
+                mi!(LDA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
+                    args.reg.lda(args.effective_addr_load.unwrap())
+                }
                 // LDX 	Load X Register 	N,Z
                 Instr(LDX, Imm(i)) => args.reg.ldx(i),
                 mi!(LDX, Zpi, ZpY, Abs, AbY) => args.reg.ldx(args.effective_addr_load.unwrap()),
@@ -847,7 +966,9 @@ impl MOS6510 {
                 Instr(LDY, Imm(i)) => args.reg.ldy(i),
                 mi!(LDY, Zpi, ZpX, Abs, AbX) => args.reg.ldy(args.effective_addr_load.unwrap()),
                 // STA 	Store Accumulator
-                mi!(STA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.mem.write(args.effective_addr.unwrap(), args.reg.a),
+                mi!(STA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
+                    args.mem.write(args.effective_addr.unwrap(), args.reg.a)
+                }
                 // STX 	Store X Register
                 mi!(STX, Zpi, ZpY, Abs) => args.mem.write(args.effective_addr.unwrap(), args.reg.x),
                 // STY 	Store Y Register
@@ -881,28 +1002,21 @@ impl MOS6510 {
                 // TXS 	Transfer X to stack pointer
                 Instr(TXS, Imp) => args.reg.sp = args.reg.x,
                 // PHA 	Push accumulator on stack
-                Instr(PHA, Imp) => {
-                    args.push(args.reg.a)
-                },
+                Instr(PHA, Imp) => args.push(args.reg.a),
                 // PHP 	Push processor status on stack
                 Instr(PHP, Imp) => {
-                    args.push(args.reg.p.bits())
-                },
+                    // https://wiki.nesdev.com/w/index.php/Status_flags#The_B_flag
+                    args.push((args.reg.p | Flags::BRK).bits())
+                }
                 // PLA 	Pull accumulator from stack 	N,Z
                 Instr(PLA, Imp) => {
                     let acc = args.pull();
                     args.reg.lda(acc)
                 }
                 // PLP 	Pull processor status from stack 	All
-                Instr(PLP, Imp) => {
-                    match Flags::from_bits(args.pull()) {
-                        Some(p) => args.reg.p = p,
-                        None => unimplemented!(), // TODO processor behavior if unused bit is set?
-                    }
-                }
+                Instr(PLP, Imp) => args.reg.p = args.pull_p(),
 
                 /***************** Logical ******************/
-
                 // The following instructions perform logical operations on the contents of the
                 // accumulator and another value held in memory. The BIT instruction performs a
                 // logical AND to test the presence of bits in the memory value to set the flags but
@@ -910,18 +1024,24 @@ impl MOS6510 {
 
                 // AND 	Logical AND 	N,Z
                 Instr(AND, Imm(i)) => args.reg.lda(args.reg.a & i),
-                mi!(AND, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.reg.a & args.effective_addr_load.unwrap()),
+                mi!(AND, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
+                    args.reg.lda(args.reg.a & args.effective_addr_load.unwrap())
+                }
                 // EOR 	Exclusive OR 	N,Z
                 Instr(EOR, Imm(i)) => args.reg.lda(args.reg.a ^ i),
-                mi!(EOR, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.reg.a ^ args.effective_addr_load.unwrap()),
+                mi!(EOR, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
+                    args.reg.lda(args.reg.a ^ args.effective_addr_load.unwrap())
+                }
                 // ORA 	Logical Inclusive OR 	N,Z
                 Instr(ORA, Imm(i)) => args.reg.lda(args.reg.a | i),
-                mi!(ORA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.reg.a | args.effective_addr_load.unwrap()),
+                mi!(ORA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
+                    args.reg.lda(args.reg.a | args.effective_addr_load.unwrap())
+                }
                 // BIT 	Bit Test 	N,V,Z
                 mi!(BIT, Zpi, Abs) => {
                     let v = args.effective_addr_load.unwrap();
-                    args.reg.p.set(Flags::NEG, v & (1<<7) != 0);
-                    args.reg.p.set(Flags::OVFL, v & (1<<6) != 0);
+                    args.reg.p.set(Flags::NEG, v & (1 << 7) != 0);
+                    args.reg.p.set(Flags::OVFL, v & (1 << 6) != 0);
                     args.reg.p.set(Flags::ZERO, (args.reg.a & v) == 0);
                 }
 
@@ -931,13 +1051,19 @@ impl MOS6510 {
 
                 // ADC 	Add with Carry 	N,V,Z,C
                 Instr(ADC, Imm(i)) => args.reg.add_to_a_with_carry_and_set_carry(i),
-                mi!(ADC, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.add_to_a_with_carry_and_set_carry(args.effective_addr_load.unwrap()),
+                mi!(ADC, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
+                    args.reg.add_to_a_with_carry_and_set_carry(args.effective_addr_load.unwrap())
+                }
                 // SBC 	Subtract with Carry 	N,V,Z,C
                 Instr(SBC, Imm(i)) => args.reg.sub_from_a_with_carry_and_set_carry(i),
-                mi!(SBC, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.sub_from_a_with_carry_and_set_carry(args.effective_addr_load.unwrap()),
+                mi!(SBC, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
+                    args.reg.sub_from_a_with_carry_and_set_carry(args.effective_addr_load.unwrap())
+                }
                 // CMP 	Compare accumulator 	N,Z,C
                 Instr(CMP, Imm(i)) => args.reg.cmp_a(i),
-                mi!(CMP, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.cmp_a(args.effective_addr_load.unwrap()),
+                mi!(CMP, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
+                    args.reg.cmp_a(args.effective_addr_load.unwrap())
+                }
                 // CPX 	Compare X register 	N,Z,C
                 Instr(CPX, Imm(i)) => args.reg.cmp_x(i),
                 mi!(CPX, Zpi, Abs) => args.reg.cmp_x(args.effective_addr_load.unwrap()),
@@ -982,25 +1108,25 @@ impl MOS6510 {
                     let (carry, v) = MOS6510::asl(args.reg.a);
                     args.reg.lda(v);
                     args.reg.set_nzc_flags(v, carry);
-                },
+                }
                 mi!(ASL, Zpi, ZpX, Abs, AbX) => {
                     let (carry, v) = MOS6510::asl(args.effective_addr_load.unwrap());
                     args.mem.write(args.effective_addr.unwrap(), v);
                     args.reg.set_nzc_flags(v, carry);
-                },
+                }
                 // LSR 	Logical Shift Right 	N,Z,C
                 Instr(LSR, Imp) => {
                     let (carry, v) = MOS6510::lsr(args.reg.a);
                     args.reg.lda(v);
                     args.reg.set_nzc_flags(v, carry);
                     args.reg.p.set(Flags::NEG, false);
-                },
+                }
                 mi!(LSR, Zpi, ZpX, Abs, AbX) => {
                     let (carry, v) = MOS6510::lsr(args.effective_addr_load.unwrap());
                     args.mem.write(args.effective_addr.unwrap(), v);
                     args.reg.set_nzc_flags(v, carry);
                     args.reg.p.set(Flags::NEG, false);
-                },
+                }
                 // ROL 	Rotate Left 	N,Z,C
                 Instr(ROL, Imp) => {
                     let (carry, res) = MOS6510::rol(args.reg.a, args.reg.p.contains(Flags::CARRY));
@@ -1008,7 +1134,8 @@ impl MOS6510 {
                     args.reg.set_nzc_flags(res, carry);
                 }
                 mi!(ROL, Zpi, ZpX, Abs, AbX) => {
-                    let (carry, res) = MOS6510::rol(args.effective_addr_load.unwrap(), args.reg.p.contains(Flags::CARRY));
+                    let (carry, res) =
+                        MOS6510::rol(args.effective_addr_load.unwrap(), args.reg.p.contains(Flags::CARRY));
                     args.mem.write(args.effective_addr.unwrap(), res);
                     args.reg.set_nzc_flags(res, carry);
                 }
@@ -1019,7 +1146,8 @@ impl MOS6510 {
                     args.reg.set_nzc_flags(res, carry);
                 }
                 mi!(ROR, Zpi, ZpX, Abs, AbX) => {
-                    let (carry, res) = MOS6510::ror(args.effective_addr_load.unwrap(), args.reg.p.contains(Flags::CARRY));
+                    let (carry, res) =
+                        MOS6510::ror(args.effective_addr_load.unwrap(), args.reg.p.contains(Flags::CARRY));
                     args.mem.write(args.effective_addr.unwrap(), res);
                     args.reg.set_nzc_flags(res, carry);
                 }
@@ -1092,19 +1220,16 @@ impl MOS6510 {
                     // BRK Increases PC by 2, but length of BRK is only 1
                     *args.next_pc = args.next_pc.and_then(|pc| pc.checked_add(1));
                     args.reg.p.insert(Flags::BRK);
+                    // push happens in cycle state machine
                 }
                 // NOP 	No Operation
                 Instr(NOP, Imp) => (),
                 // RTI 	Return from Interrupt 	All
                 Instr(RTI, Imp) => {
-                    args.reg.p = match Flags::from_bits(args.pull()) {
-                        Some(f) => f,
-                        None => unimplemented!(), // TODO (behaviorwith unset bits?)
-                    };
+                    args.reg.p = args.pull_p();
                     *args.next_pc = Some(args.pull_u16());
                     // restore of p implicitly resets BRK
-                },
-
+                }
 
                 _ => panic!("unimplemented instruction: {}", args.instr),
             }
@@ -1134,6 +1259,7 @@ mod tests {
 
         #[derive(Debug)]
         struct Case {
+            descr: &'static str,
             pre_a: u8,
             pre_flags: Flags,
             v: u8,
@@ -1146,6 +1272,7 @@ mod tests {
             // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
             let tests = [
                 Case {
+                    descr: "",
                     pre_a: 0x50,
                     pre_flags: Flags::empty(),
                     v: 0x50,
@@ -1153,6 +1280,7 @@ mod tests {
                     post_flags: Flags::OVFL | Flags::NEG,
                 },
                 Case {
+                    descr: "",
                     pre_a: 0x50,
                     pre_flags: Flags::empty(),
                     v: 0xd0,
@@ -1160,6 +1288,7 @@ mod tests {
                     post_flags: Flags::CARRY,
                 },
                 Case {
+                    descr: "",
                     pre_a: 0xd0,
                     pre_flags: Flags::empty(),
                     v: 0x90,
@@ -1179,22 +1308,45 @@ mod tests {
         }
 
         #[test]
-        fn sdc() {
-            // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
+        fn sbc() {
+            // APPROACH: https://codebase64.org/doku.php?id=base:16bit_addition_and_subtraction must work:
+            // ; subtracts number 2 from number 1 and writes result out
+            // sub	sec				; set carry for borrow purpose
+            // lda num1lo
+            // sbc num2lo			; perform subtraction on the LSBs
+            // sta reslo
+            // lda num1hi			; do the same for the MSBs, with carry
+            // sbc num2hi			; set according to the previous result
+            // sta reshi
+            // rts
+            //
+            //
+            // Note that after sdc returns, the carry bit is set if we'd need a borrow
+            // (do a manual subtraction on the whiteboard, you'll understand)
             let tests = [
                 Case {
-                    pre_a: 0x50,
-                    pre_flags: Flags::empty(),
-                    v: 0xf0,
-                    post_a: 0x60,
+                    descr: "0 - (-1) - NOborrow",
+                    pre_a: 0x0,
+                    pre_flags: Flags::CARRY,
+                    v: 0xff,
+                    post_a: 0x1,
                     post_flags: Flags::empty(),
                 },
                 Case {
-                    pre_a: 0x50,
+                    descr: "0 - 0 - NOborrow",
+                    pre_flags: Flags::CARRY,
+                    pre_a: 0,
+                    v: 0,
+                    post_flags: Flags::CARRY | Flags::ZERO,
+                    post_a: 0,
+                },
+                Case {
+                    descr: "0 - 0 - borrow",
                     pre_flags: Flags::empty(),
-                    v: 0xb0,
-                    post_a: 0xa0,
-                    post_flags: Flags::OVFL,
+                    pre_a: 0,
+                    v: 0,
+                    post_flags: Flags::NEG,
+                    post_a: 0b1111_1111,
                 },
             ];
             for case in &tests {

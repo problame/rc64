@@ -39,10 +39,10 @@ impl MemoryView {
             return self.banking_state.expansion_port.bits();
         }
 
-        if addr >= 0xfffa {
-            let rel_addr = addr - 0xe000;
-            return self.memory_areas[MemoryAreaKind::KernelRom].borrow().read(rel_addr);
-        }
+        // if addr >= 0xfffa {
+        //     let rel_addr = addr - 0xe000;
+        //     return self.memory_areas[MemoryAreaKind::KernelRom].borrow().read(rel_addr);
+        // }
 
         for segment in self.banking_state.iter() {
             if let Some(addr) = segment.relative_address(addr) {
@@ -187,7 +187,7 @@ impl BankingState {
         let loram = self.cpu_control_lines.contains(CpuControlLines::LORAM);
         let hiram = self.cpu_control_lines.contains(CpuControlLines::HIRAM);
         let charen = self.cpu_control_lines.contains(CpuControlLines::CHAREN);
-        let game = true; //self.expansion_port.contains(ExpansionPort::GAME);
+        let game = self.expansion_port.contains(ExpansionPort::GAME);
         let exrom = self.expansion_port.contains(ExpansionPort::EXROM);
         let combined = {
             let mut v: u16 = 0;

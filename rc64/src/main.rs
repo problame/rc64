@@ -18,8 +18,10 @@ mod rom;
 mod vic20;
 mod backend {
     pub(super) mod fb_minifb;
+    pub(super) mod noninteractive;
 }
 mod autoload;
+mod autostop_selfjmp;
 mod cycler;
 mod debugger_cli;
 
@@ -53,6 +55,12 @@ pub enum AutloadFileType {
     Bin0x0400,
 }
 
+use std::num::ParseIntError;
+
+fn parse_hex(src: &str) -> Result<u16, ParseIntError> {
+    u16::from_str_radix(src, 16)
+}
+
 #[derive(Debug, StructOpt)]
 struct Args {
     #[structopt(long, help = "use custom kernal image")]
@@ -60,6 +68,22 @@ struct Args {
 
     #[structopt(long, help = "trap to debugger after first instr")]
     trap_init: bool,
+
+    #[structopt(long, help = "start with instrlog enabled (can also enable from debugger)")]
+    instrlog: bool,
+
+    #[structopt(
+        long,
+        help = "stop execution if the PC is at this value and the instruction at this value is a JMP to this value",
+        parse(try_from_str = parse_hex)
+    )]
+    stop_at_self_jmp: Option<u16>,
+
+    #[structopt(long = "non-interactive")]
+    non_interactive: bool,
+
+    #[structopt(long = "no-gui")]
+    no_gui: bool,
 
     #[structopt(help = "autostart file")]
     autostart_path: Option<PathBuf>,
@@ -92,7 +116,11 @@ fn main() {
     let color_ram = r2c_new!(ColorRAM::default());
 
     let (screen_buf_reader, screen_buf_updater) = vic20::framebuffer::new();
-    let screen = r2c_new!(backend::fb_minifb::Minifb::new(screen_buf_reader));
+    let screen_and_peripheral_devices_backend: R2C<dyn cia::PeripheralDevicesBackend> = if args.no_gui {
+        r2c_new!(backend::noninteractive::new())
+    } else {
+        r2c_new!(backend::fb_minifb::Minifb::new(screen_buf_reader))
+    };
 
     let vic20 = r2c_new!(vic20::VIC20::new(
         rom::stock::CHAR_ROM,
@@ -104,7 +132,10 @@ fn main() {
     let keyboard_emulator = r2c_new!(EmulatedKeyboard::new());
 
     let cia1 = r2c_new!(CIA::<()>::new(CIAKind::Chip1 {
-        peripherals: r2c_new!((screen, keyboard_emulator.clone()))
+        peripherals: r2c_new!((
+            screen_and_peripheral_devices_backend,
+            keyboard_emulator.clone() as R2C<dyn cia::PeripheralDevicesBackend>
+        ))
     }));
     let cia2 = r2c_new!(CIA::new(CIAKind::Chip2 { vic: vic20.clone() }));
 
@@ -130,11 +161,17 @@ fn main() {
     if args.trap_init {
         debugger.borrow_mut().add_pc_breakpoint(0);
     }
+    if let Some(stop_at_self_jmp) = args.stop_at_self_jmp {
+        autostop_selfjmp::register(stop_at_self_jmp, &mut debugger.borrow_mut());
+    }
+    debugger.borrow_mut().set_instr_logging_enabled(args.instrlog);
     let debugger_cli = r2c_new!(debugger_cli::DebuggerCli::default());
 
     let sigint_pending = Arc::new(std::sync::atomic::AtomicBool::default());
-    signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&sigint_pending))
-        .expect("cannot register SIGINT handler");
+    if !args.non_interactive {
+        signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&sigint_pending))
+            .expect("cannot register SIGINT handler");
+    }
 
     let mpu = r2c_new!(mos6510::MOS6510::new(
         areas,
@@ -144,21 +181,28 @@ fn main() {
         keyboard_emulator.clone(),
     ));
 
-    let mut autoload_state: Option<Box<dyn autoload::Autloader>> = match (args.autostart_path, args.autostart_file_type) {
-        (None, _) => None,
-        (Some(path), x) => {
-            let bytes = std::fs::read(path).expect("read PRG");
-            match x {
-                AutloadFileType::PRG => {
-                    let prg =  autoload::prg::PRG::try_from(bytes).expect("parse PRG");
-                    Some(Box::new(autoload::prg::AutloadState::new(prg, ram.clone(), keyboard_emulator.clone())))
-                }
-                AutloadFileType::Bin0x0400 => {
-                    Some(Box::new(autoload::bin0x0400::AutoloadState::new(bytes, ram.clone(), mpu.clone())))
+    let mut autoload_state: Option<Box<dyn autoload::Autloader>> =
+        match (args.autostart_path, args.autostart_file_type) {
+            (None, _) => None,
+            (Some(path), x) => {
+                let bytes = std::fs::read(path).expect("read PRG");
+                match x {
+                    AutloadFileType::PRG => {
+                        let prg = autoload::prg::PRG::try_from(bytes).expect("parse PRG");
+                        Some(Box::new(autoload::prg::AutloadState::new(
+                            prg,
+                            ram.clone(),
+                            keyboard_emulator.clone(),
+                        )))
+                    }
+                    AutloadFileType::Bin0x0400 => Some(Box::new(autoload::bin0x0400::AutoloadState::new(
+                        bytes,
+                        ram.clone(),
+                        mpu.clone(),
+                    ))),
                 }
             }
-        }
-    };
+        };
 
     let mut loop_helper = cycler::Cycler::new(cycler::Config {
         guest_core_cps_hz: 1_000_000.0,
@@ -202,13 +246,23 @@ fn main() {
         }
         mpu.borrow_mut().cycle(cia_irq.or(vic_irq), cia_nmi);
 
+        if let mos6510::State::Stopped { .. } = mpu.borrow().state() {
+            eprintln!("cpu stopped, exiting emulator");
+            break;
+        }
+
         cycles += 1;
 
         if let Some(after_cycles) = args.exit_after_cycles {
             if cycles >= after_cycles {
-                eprintln!("exiting after:\n{} cycles\n{} executed instrs", cycles, mpu.borrow().applied_instrs());
+                eprintln!(
+                    "exiting after:\n{} cycles\n{} executed instrs",
+                    cycles,
+                    mpu.borrow().applied_instrs()
+                );
                 std::process::exit(0);
             }
         }
     }
+    eprintln!("emulator ran {} cycles, executed {} instrs", cycles, mpu.borrow().applied_instrs());
 }

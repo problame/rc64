@@ -130,7 +130,6 @@ impl AutloadState {
     pub fn new(prg: PRG, ram: R2C<RAM>, keyboard_emulator: R2C<EmulatedKeyboard>) -> Self {
         AutloadState { st: State::Init { last_check_at: Instant::now() }, ram, prg, keyboard_emulator }
     }
-
 }
 
 impl super::Autloader for AutloadState {

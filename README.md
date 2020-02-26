@@ -1,11 +1,5 @@
 ## TODOs
 
-Notes from the final presentation
-
-- [ ] SDC instruction
-- [ ] run the "klaus" 6502 test suite
-  - failure is encoded by a self-jumping instruction (the tightest loop you can get)
-  - success??? => ask C++ group
 - [ ] check ASL behavior: on the real hw, it writes to memory twice:
   - once original value
   - then ASLed value
@@ -13,6 +7,11 @@ Notes from the final presentation
 - [ ] Boulder demo brown font
 - [ ] Ninja demo (switches text mode & bitmap mode)
 - [ ] Run pacman demo (there is one that requires sprites, one that doesn't)
+- [ ] Fill Highlights section
+
+## Highlights
+
+- [x] Passes Klaus Dormann's 6502 functional test suite (no BCD mode)
 
 ## License
 
@@ -22,6 +21,8 @@ Licensed under either of
  * MIT license ([LICENSE-MIT](LICENSE-MIT) or http://opensource.org/licenses/MIT)
 
 at your option.
+
+Above licensing does not apply to the vendored 6502 functional test suite in the sub-directory `dormann_6502_functional_test_suite`, which is licensed under *GPLv3* (see `dormann_6502_functional_test_suite/vendor_upstream_6502_functional_test_suite_fe99e5616243a1bdbceaf5907390ce4443de7db0.tar`)
 
 ## Performance Measurement
 
