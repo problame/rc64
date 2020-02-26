@@ -34,6 +34,9 @@ impl MOS6510 {
     pub fn mem(&self) -> &MemoryView {
         &self.mem
     }
+    pub fn mem_mut(&mut self) -> &mut MemoryView {
+        &mut self.mem
+    }
 }
 
 // https://www.c64-wiki.com/wiki/Processor_Status_Register
@@ -511,6 +514,11 @@ impl MOS6510 {
 
     pub fn inject_instr_on_next_fetch(&mut self, i: Instr) {
         self.state.interrupts().inject_instr = Some(i);
+    }
+
+    // only pub for friend class bin0x0400 :P
+    pub(super) fn set_state(&mut self, s: State) {
+        self.state = s;
     }
 
     pub fn cycle(&mut self, irq: Option<Interrupt>, nmi: Option<Interrupt>) {

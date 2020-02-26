@@ -45,6 +45,14 @@ impl mos6510::MemoryArea for UnimplMemoryArea {
     }
 }
 
+#[derive(Debug, EnumString, StructOpt)]
+pub enum AutloadFileType {
+    #[strum(serialize = "prg")]
+    PRG,
+    #[strum(serialize = "bin-0x0400")]
+    Bin0x0400,
+}
+
 #[derive(Debug, StructOpt)]
 struct Args {
     #[structopt(long, help = "use custom kernal image")]
@@ -53,8 +61,11 @@ struct Args {
     #[structopt(long, help = "trap to debugger after first instr")]
     trap_init: bool,
 
-    #[structopt(help = "autostart prg file")]
-    prg: Option<PathBuf>,
+    #[structopt(help = "autostart file")]
+    autostart_path: Option<PathBuf>,
+
+    #[structopt(long = "autostart-file-type", help = "prg,bin-0x0400", default_value = "prg")]
+    autostart_file_type: AutloadFileType,
 
     #[structopt(long, help = "number of allowed slow cycles per second", default_value = "150000")]
     slow_cycle_thresh: u64,
@@ -125,19 +136,29 @@ fn main() {
     signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&sigint_pending))
         .expect("cannot register SIGINT handler");
 
-    let mut mpu = mos6510::MOS6510::new(
+    let mpu = r2c_new!(mos6510::MOS6510::new(
         areas,
         ram.clone(),
         debugger.clone(),
         debugger_cli as R2C<dyn DebuggerUI>,
         keyboard_emulator.clone(),
-    );
+    ));
 
-    let mut autoload_state = args
-        .prg
-        .map(|path| std::fs::read(path).expect("read PRG"))
-        .map(|bytes| autoload::PRG::try_from(bytes).expect("parse PRG"))
-        .map(|prg| autoload::AutloadState::new(prg, ram.clone(), keyboard_emulator.clone()));
+    let mut autoload_state: Option<Box<dyn autoload::Autloader>> = match (args.autostart_path, args.autostart_file_type) {
+        (None, _) => None,
+        (Some(path), x) => {
+            let bytes = std::fs::read(path).expect("read PRG");
+            match x {
+                AutloadFileType::PRG => {
+                    let prg =  autoload::prg::PRG::try_from(bytes).expect("parse PRG");
+                    Some(Box::new(autoload::prg::AutloadState::new(prg, ram.clone(), keyboard_emulator.clone())))
+                }
+                AutloadFileType::Bin0x0400 => {
+                    Some(Box::new(autoload::bin0x0400::AutoloadState::new(bytes, ram.clone(), mpu.clone())))
+                }
+            }
+        }
+    };
 
     let mut loop_helper = cycler::Cycler::new(cycler::Config {
         guest_core_cps_hz: 1_000_000.0,
@@ -168,7 +189,7 @@ fn main() {
         let cia_irq = cia1.borrow().cycle();
         let cia_nmi = cia2.borrow().cycle();
 
-        let vic_irq = vic20.borrow_mut().cycle(cycles, mpu.debugger_refmut());
+        let vic_irq = vic20.borrow_mut().cycle(cycles, mpu.borrow_mut().debugger_refmut());
 
         if let Some(autoload_state) = &mut autoload_state {
             autoload_state.cycle();
@@ -179,13 +200,13 @@ fn main() {
             sigint_pending.store(false, std::sync::atomic::Ordering::SeqCst);
             debugger.borrow_mut().break_after_next_decode();
         }
-        mpu.cycle(cia_irq.or(vic_irq), cia_nmi);
+        mpu.borrow_mut().cycle(cia_irq.or(vic_irq), cia_nmi);
 
         cycles += 1;
 
         if let Some(after_cycles) = args.exit_after_cycles {
             if cycles >= after_cycles {
-                eprintln!("exiting after:\n{} cycles\n{} executed instrs", cycles, mpu.applied_instrs());
+                eprintln!("exiting after:\n{} cycles\n{} executed instrs", cycles, mpu.borrow().applied_instrs());
                 std::process::exit(0);
             }
         }
