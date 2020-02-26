@@ -1,4 +1,5 @@
 mod backends;
+pub(super) mod joystick;
 pub(super) mod keyboard;
 mod registers;
 

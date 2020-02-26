@@ -976,7 +976,9 @@ impl MOS6510 {
                     args.reg.set_nzc_flags(v, carry);
                 },
                 mi!(ASL, Zpi, ZpX, Abs, AbX) => {
-                    let (carry, v) = MOS6510::asl(args.effective_addr_load.unwrap());
+                    let oldvalue = args.effective_addr_load.unwrap();
+                    args.mem.write(args.effective_addr.unwrap(), oldvalue);
+                    let (carry, v) = MOS6510::asl(oldvalue);
                     args.mem.write(args.effective_addr.unwrap(), v);
                     args.reg.set_nzc_flags(v, carry);
                 },

@@ -1,3 +1,4 @@
+use crate::cia::joystick::JoystickSwitch;
 use crate::cia::keyboard::KeyboardMatrix;
 use crate::interrupt::Interrupt;
 use crate::utils::R2C;
@@ -299,6 +300,8 @@ pub enum DataPortBackend<T> {
 
 pub trait PeripheralDevicesBackend {
     fn get_current_keyboard_matrix(&self) -> KeyboardMatrix;
+    fn get_current_joystick1_state(&self) -> JoystickSwitch;
+    fn get_current_joystick2_state(&self) -> JoystickSwitch;
 }
 
 impl<A: PeripheralDevicesBackend, B: PeripheralDevicesBackend> PeripheralDevicesBackend
@@ -312,6 +315,16 @@ impl<A: PeripheralDevicesBackend, B: PeripheralDevicesBackend> PeripheralDevices
                 matrix
             }
         }
+    }
+
+    fn get_current_joystick2_state(&self) -> JoystickSwitch {
+        let (a, b) = self;
+        a.borrow().get_current_joystick2_state() | b.borrow().get_current_joystick2_state()
+    }
+
+    fn get_current_joystick1_state(&self) -> JoystickSwitch {
+        let (a, b) = self;
+        a.borrow().get_current_joystick1_state() | b.borrow().get_current_joystick1_state()
     }
 }
 

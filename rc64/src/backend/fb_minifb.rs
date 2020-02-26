@@ -1,3 +1,4 @@
+use crate::cia::joystick::JoystickSwitch;
 use crate::cia::keyboard::{C64Key, KeyboardMatrix};
 use crate::cia::PeripheralDevicesBackend;
 use crate::vic20::framebuffer;
@@ -41,6 +42,20 @@ impl Minifb {
 impl PeripheralDevicesBackend for Minifb {
     fn get_current_keyboard_matrix(&self) -> KeyboardMatrix {
         self.pressed_keys.lock().iter().cloned().map(C64Key::try_from).filter_map(Result::ok).into()
+    }
+
+    fn get_current_joystick1_state(&self) -> JoystickSwitch {
+        JoystickSwitch::default()
+    }
+
+    fn get_current_joystick2_state(&self) -> JoystickSwitch {
+        self.pressed_keys
+            .lock()
+            .iter()
+            .cloned()
+            .map(JoystickSwitch::try_from)
+            .filter_map(Result::ok)
+            .fold(JoystickSwitch::default(), std::ops::BitOr::bitor)
     }
 }
 
@@ -147,28 +162,50 @@ impl TryFrom<Key> for C64Key {
             RightShift     => Ok(C64Key::RShift),
             LeftCtrl       => Ok(C64Key::Ctrl),
             RightCtrl      => Ok(C64Key::Ctrl),
-            NumPad0        => Ok(C64Key::Zero),
-            NumPad1        => Ok(C64Key::One),
-            NumPad2        => Ok(C64Key::Two),
-            NumPad3        => Ok(C64Key::Three),
-            NumPad4        => Ok(C64Key::Four),
-            NumPad5        => Ok(C64Key::Five),
-            NumPad6        => Ok(C64Key::Six),
-            NumPad7        => Ok(C64Key::Seven),
-            NumPad8        => Ok(C64Key::Eight),
-            NumPad9        => Ok(C64Key::Nine),
-            NumPadDot      => Ok(C64Key::Period),
-            NumPadSlash    => Ok(C64Key::Slash),
-            NumPadAsterisk => Ok(C64Key::Star),
-            NumPadMinus    => Ok(C64Key::Dash),
-            NumPadPlus     => Ok(C64Key::Plus),
-            NumPadEnter    => Ok(C64Key::Return),
+            NumPad0        => Err(UnmappedKey), // Ok(C64Key::Zero),
+            NumPad1        => Err(UnmappedKey), // Ok(C64Key::One),
+            NumPad2        => Err(UnmappedKey), // Ok(C64Key::Two),
+            NumPad3        => Err(UnmappedKey), // Ok(C64Key::Three),
+            NumPad4        => Err(UnmappedKey), // Ok(C64Key::Four),
+            NumPad5        => Err(UnmappedKey), // Ok(C64Key::Five),
+            NumPad6        => Err(UnmappedKey), // Ok(C64Key::Six),
+            NumPad7        => Err(UnmappedKey), // Ok(C64Key::Seven),
+            NumPad8        => Err(UnmappedKey), // Ok(C64Key::Eight),
+            NumPad9        => Err(UnmappedKey), // Ok(C64Key::Nine),
+            NumPadDot      => Err(UnmappedKey), // Ok(C64Key::Period),
+            NumPadSlash    => Err(UnmappedKey), // Ok(C64Key::Slash),
+            NumPadAsterisk => Err(UnmappedKey), // Ok(C64Key::Star),
+            NumPadMinus    => Err(UnmappedKey), // Ok(C64Key::Dash),
+            NumPadPlus     => Err(UnmappedKey), // Ok(C64Key::Plus),
+            NumPadEnter    => Err(UnmappedKey), // Ok(C64Key::Return),
             LeftAlt        => Err(UnmappedKey),
             RightAlt       => Err(UnmappedKey),
             LeftSuper      => Ok(C64Key::Commodore),
             RightSuper     => Ok(C64Key::Commodore),
             Unknown        => Err(UnmappedKey),
             Count          => unreachable!(),
+        }
+    }
+}
+
+impl TryFrom<Key> for JoystickSwitch {
+    type Error = UnmappedKey;
+
+    fn try_from(key: Key) -> Result<Self, Self::Error> {
+        use Key::*;
+        match key {
+            NumPad1 => Err(UnmappedKey),
+            NumPad2 => Err(UnmappedKey),
+            NumPad3 => Err(UnmappedKey),
+            NumPad4 => Ok(JoystickSwitch::LEFT),
+            NumPad5 => Ok(JoystickSwitch::DOWN),
+            NumPad6 => Ok(JoystickSwitch::RIGHT),
+            NumPad7 => Err(UnmappedKey),
+            NumPad8 => Ok(JoystickSwitch::UP),
+            NumPad9 => Err(UnmappedKey),
+            NumPadEnter | NumPad0 => Ok(JoystickSwitch::FIRE),
+            Count => unreachable!(),
+            _ => Err(UnmappedKey),
         }
     }
 }
