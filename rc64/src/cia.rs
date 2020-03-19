@@ -127,7 +127,7 @@ impl<T: 'static> CIA<T> {
 
 impl<T> CIA<T> {
     fn get_reg(&self, addr: u16) -> Rc<dyn Register> {
-        assert!(addr < 0xff);
+        let addr = addr & 0xff;
 
         self.registers[(addr % 0x10) as usize].clone()
     }

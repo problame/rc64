@@ -237,7 +237,7 @@ impl MemoryPointers {
 
 impl<T> MemoryArea for VIC20<T> {
     fn read(&self, addr: u16) -> u8 {
-        let addr = addr as usize & 0xff;
+        let addr = addr as usize & 0b0011_1111;
         let val = match addr {
             0x00..=0x0f => {
                 // Access to x and y coordinates in alternating order
@@ -268,7 +268,8 @@ impl<T> MemoryArea for VIC20<T> {
             0x21..=0x24 => self.regs.background_color[addr - 0x21] | 0b1111_0000,
             0x25..=0x26 => self.regs.sprite_multicolors[addr - 0x25] | 0b1111_0000,
             0x27..=0x2e => self.regs.color_sprite[addr - 0x27] | 0b1111_0000,
-            _ => unreachable!("47usize..=std::usize::MAX should be masked out"),
+            0x2f..=0x3f => 0xff,
+            _ => unreachable!("0x40..=std::usize::MAX should be masked out"),
         };
 
         if false {
@@ -284,7 +285,7 @@ impl<T> MemoryArea for VIC20<T> {
     }
 
     fn write(&mut self, addr: u16, val: u8) -> WriteResult {
-        let addr = addr as usize & 0xff;
+        let addr = addr as usize & 0b0011_1111;
         // println!("VIC WRIT 0xd0{:0>2x}:= 0x{:0>2x}", addr, val);
         match addr {
             0x00..=0x0f => {
@@ -341,7 +342,8 @@ impl<T> MemoryArea for VIC20<T> {
             0x21..=0x24 => self.regs.background_color[addr - 0x21] = val,
             0x25..=0x26 => self.regs.sprite_multicolors[addr - 0x25] = val,
             0x27..=0x2e => self.regs.color_sprite[addr - 0x27] = val,
-            _ => unreachable!("47usize..=std::usize::MAX should be masked out"),
+            0x2f..=0x3f => (),
+            _ => unreachable!("0x40..=std::usize::MAX should be masked out"),
         }
 
         WriteResult::Wrote
