@@ -215,11 +215,15 @@ bitflags! {
     }
 }
 
-bitflags! {
-    #[derive(Default)]
-    pub(super) struct MemoryPointers: u8 {
-        const VM = 0b1111_000_0;
-        const CB = 0b0000_111_0;
+#[derive(Default, Clone, Copy)]
+pub(super) struct MemoryPointers(u8);
+use std::fmt;
+impl fmt::Debug for MemoryPointers {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("MemoryPointers")
+            .field("vm", &self.video_matrix_base())
+            .field("cb", &self.character_generator_base())
+            .finish()
     }
 }
 
@@ -227,11 +231,11 @@ use std::convert::TryFrom;
 
 impl MemoryPointers {
     pub fn video_matrix_base(self) -> U14 {
-        U14::try_from(((self & MemoryPointers::VM).bits() as u16) << (-4 + 10)).unwrap()
+        U14::try_from(((self.0 & 0b1111_000_0) as u16) << (-4 + 10)).unwrap()
     }
 
     pub fn character_generator_base(self) -> U14 {
-        U14::try_from(((self & MemoryPointers::CB).bits() as u16) << (-1 + 11)).unwrap()
+        U14::try_from(((self.0 & 0b0000_111_0) as u16) << (-1 + 11)).unwrap()
     }
 }
 
@@ -256,7 +260,7 @@ impl<T> MemoryArea for VIC20<T> {
             0x15 => self.regs.sprite_enabled,
             0x16 => self.regs.control_register_2.bits() | 0b1100_0000,
             0x17 => self.regs.sprite_expansion.y,
-            0x18 => self.regs.memory_pointers.bits() | 0b0000_0001,
+            0x18 => self.regs.memory_pointers.0 | 0b0000_0001,
             0x19 => self.regs.interrupt_register.bits() | 0b0111_0000,
             0x1a => self.regs.interrupt_enabled.bits() | 0b1111_0000,
             0x1b => self.regs.sprite_data_priority,
@@ -326,7 +330,7 @@ impl<T> MemoryArea for VIC20<T> {
             0x15 => self.regs.sprite_enabled = val,
             0x16 => self.regs.control_register_2 = ControlRegister2::from_bits_truncate(val),
             0x17 => self.regs.sprite_expansion.y = val,
-            0x18 => self.regs.memory_pointers = MemoryPointers::from_bits_truncate(val),
+            0x18 => self.regs.memory_pointers = MemoryPointers(val),
             0x19 => {
                 // interrupt is acknowledged with a 1 bit
                 self.regs.interrupt_register =
