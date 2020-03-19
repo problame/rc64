@@ -183,7 +183,6 @@ impl<T> Register for DataB<T> {
                 let joy = !peripherals.borrow().get_current_joystick1_state().bits();
 
                 out &= joy;
-                println!("PRB = {:}", out & 31);
 
                 out
             }
