@@ -1,0 +1,15 @@
+00 rem from https://www.lemon64.com/forum/viewtopic.php?t=40530
+10 fork=0to10:rem set up direction string
+20 readdr$(k):next
+30 data"","n","s","","w","nw"
+40 data"sw","","e","ne","se"
+50 print"going...";
+60 gosub100:rem read the joystick
+65 ifdr$(jv)=""then80:rem check if a direction was chosen
+70 printdr$(jv);" ";:rem output which direction
+80 iffr=16then60:rem check if fire button was pushed
+90 print"-----f-----i-----r-----e-----!!!":goto60
+100 jv=peek(56320):rem get joystick value
+110 fr=jvand16:rem form fire button status
+120 jv=15-(jvand15):rem form direction value
+130 return

@@ -1,4 +1,5 @@
 use crate::cia::backends::PeripheralDevicesBackend;
+use crate::cia::joystick::JoystickSwitch;
 use enum_map::{enum_map, Enum, EnumMap};
 use lazy_static::lazy_static;
 use std::cell::{Cell, RefCell};
@@ -313,5 +314,13 @@ impl PeripheralDevicesBackend for EmulatedKeyboard {
             self.current_matrix.set(matrix.clone());
             matrix
         }
+    }
+
+    fn get_current_joystick1_state(&self) -> JoystickSwitch {
+        JoystickSwitch::default()
+    }
+
+    fn get_current_joystick2_state(&self) -> JoystickSwitch {
+        JoystickSwitch::default()
     }
 }

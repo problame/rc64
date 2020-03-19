@@ -1,4 +1,4 @@
-use crate::cia::keyboard::{KeyboardMatrix, MatrixIndex};
+use crate::cia::keyboard::MatrixIndex;
 use crate::utils::R2C;
 
 use super::backends::*;
@@ -68,7 +68,10 @@ pub(super) enum Precision {
 impl<T> Register for DataA<T> {
     fn read(&self) -> u8 {
         match *self.0.borrow() {
-            DataPortBackend::CIA1 { .. } => unimpl!(0),
+            DataPortBackend::CIA1 { ref peripherals, .. } => {
+                let out = !peripherals.borrow().get_current_joystick2_state().bits();
+                out
+            }
             DataPortBackend::CIA2 { ref vic, .. } => {
                 use crate::vic20::BankingState::*;
                 match vic.borrow_mut().get_banking() {
@@ -80,6 +83,7 @@ impl<T> Register for DataA<T> {
             }
         }
     }
+
     fn write(&self, val: u8) {
         match *self.0.borrow_mut() {
             DataPortBackend::CIA1 { ref mut last_data_a_write, .. } => {
@@ -157,11 +161,7 @@ impl<T> Register for DataB<T> {
     fn read(&self) -> u8 {
         match &*self.0.borrow() {
             DataPortBackend::CIA1 { peripherals, last_data_a_write } => {
-                let keyboard_matrix: KeyboardMatrix = peripherals.borrow().get_current_keyboard_matrix();
-
-                // if !keyboard_matrix.empty() {
-                //     println!("keyboard_matrix=\n{:?}", keyboard_matrix);
-                // }
+                let keyboard_matrix = peripherals.borrow().get_current_keyboard_matrix();
 
                 // last_data_a_write selected a set of columns
                 // reading B returns one byte,
@@ -180,9 +180,10 @@ impl<T> Register for DataB<T> {
 
                 out = !out; // 0 means pressed, 1 means none pressed
 
-                // if !keyboard_matrix.empty() {
-                //     println!("req={:b} out={:b}", last_data_a_write, out);
-                // }
+                let joy = !peripherals.borrow().get_current_joystick1_state().bits();
+
+                out &= joy;
+                println!("PRB = {:}", out & 31);
 
                 out
             }
