@@ -160,7 +160,7 @@ fn main() {
         MemoryAreaKind::CIA1 =>      cia1.clone(),
         MemoryAreaKind::CIA2 =>      cia2.clone(),
         MemoryAreaKind::ColorRam =>  color_ram.clone() as R2C<dyn MemoryArea>,
-        MemoryAreaKind::SID =>       r2c_new!(UnimplMemoryArea("sid", Some((0, WriteResult::Ignored)))) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::SID =>       r2c_new!(UnimplMemoryArea("sid", Some((0, WriteResult::Wrote)))) as R2C<dyn MemoryArea>,
         MemoryAreaKind::VIC =>       vic20.clone(),
         MemoryAreaKind::CharRom =>   r2c_new!(rom::stock::CHAR_ROM) as R2C<dyn MemoryArea>,
         MemoryAreaKind::Unmapped =>      r2c_new!(UnimplMemoryArea("unmapped", None)) as R2C<dyn MemoryArea>,
