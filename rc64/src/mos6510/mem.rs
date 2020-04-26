@@ -39,11 +39,6 @@ impl MemoryView {
             return self.banking_state.expansion_port.bits();
         }
 
-        // if addr >= 0xfffa {
-        //     let rel_addr = addr - 0xe000;
-        //     return self.memory_areas[MemoryAreaKind::KernelRom].borrow().read(rel_addr);
-        // }
-
         for segment in self.banking_state.iter() {
             if let Some(addr) = segment.relative_address(addr) {
                 return self.memory_areas[segment.kind].borrow().read(addr);
@@ -183,12 +178,15 @@ impl BankingState {
     fn update_banking(&mut self) {
         self.banking.clear();
 
-        #[allow(clippy::identity_op)]
         let loram = self.cpu_control_lines.contains(CpuControlLines::LORAM);
         let hiram = self.cpu_control_lines.contains(CpuControlLines::HIRAM);
         let charen = self.cpu_control_lines.contains(CpuControlLines::CHAREN);
-        let game = self.expansion_port.contains(ExpansionPort::GAME);
-        let exrom = self.expansion_port.contains(ExpansionPort::EXROM);
+
+        // we don't support cartridges => emulate that a catridge is _not_ plugged in
+        // by emulating the pull-up resisitor which puts the pins to default logical 1
+        let game = true; // self.expansion_port.contains(ExpansionPort::GAME);
+        let exrom = true; // self.expansion_port.contains(ExpansionPort::EXROM);
+
         let combined = {
             let mut v: u16 = 0;
             v |= (exrom as u16) << 4;
