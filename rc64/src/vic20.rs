@@ -157,7 +157,8 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                     // c-access
                     let vm = self.regs.memory_pointers.video_matrix_base();
                     let vc = char_row * 40 + char_col;
-                    let (color, ch) = self.mem.read(vm + vc).into();
+                    let (c_access_msbs, ch) = self.mem.read(vm + vc).into();
+                    let c_access_msbs = u8::from(c_access_msbs);
 
                     // g-access
                     let cb = self.regs.memory_pointers.character_generator_base();
@@ -168,10 +169,12 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                     let bm: u8 = self.mem.read_data(cb + d + rc);
                     let bm = bm.bits::<Msb0>();
 
-                    let fg = Color::try_from(color).unwrap();
                     let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
 
-                    if self.regs.control_register_2.contains(ControlRegister2::MCM) {
+                    let (mc_flag, mcm_11_pixel_color) =
+                        ((c_access_msbs & 0b1000) != 0, c_access_msbs & 0b0111);
+
+                    if mc_flag && self.regs.control_register_2.contains(ControlRegister2::MCM) {
                         let pairs = {
                             let mut bm = bm.iter();
                             let pairs = [
@@ -184,6 +187,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                             pairs
                         };
 
+                        let fg = Color::try_from(mcm_11_pixel_color).unwrap();
                         let bg1 = Color::try_from(self.regs.background_color[1] % 16).unwrap();
                         let bg2 = Color::try_from(self.regs.background_color[2] % 16).unwrap();
 
@@ -200,6 +204,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                         }
                         self.draw_horizontal_slice(&colors);
                     } else {
+                        let fg = Color::try_from(c_access_msbs).unwrap();
                         self.draw_horizontal(bm.iter().map(|is_fg| match is_fg {
                             true => fg,
                             false => bg,

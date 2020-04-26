@@ -11,10 +11,11 @@ use lazy_static::lazy_static;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Add, Sub, Into)]
 pub struct U14(u16);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Add, Sub, Into)]
 pub struct U12(u16);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Add, Sub, Into)]
-pub struct U4(u8);
+pub struct U4(pub u8);
 
 const U14_MAX: usize = (1 << 14) - 1;
 
