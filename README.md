@@ -20,7 +20,7 @@ Have a look at our [final presentation](https://docs.google.com/presentation/d/1
 - [x] PRG Autostarter - just pass the path to the PRG you want to start on the command line
 - [x] Cycle-accurate instruction execution duration
   - architectural behavior of each instruction applied in first cycle, though
-- [x] Joystick Support - try it with `./rc64/prg_tests/joy.prg`
+- [x] Joystick Support - try it in Boulder or with `./rc64/prg_tests/joy.prg`
 - [x] Rust Memory-Safety
 
 ### What Works And What Doesn't
