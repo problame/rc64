@@ -29,7 +29,7 @@ impl DebuggerCli {
     fn do_loop(
         &mut self,
         mos: &mos6510::MOS6510,
-        vic: &mut dyn RasterBreakpointBackend,
+        vic: crate::utils::R2C<dyn RasterBreakpointBackend>,
     ) -> Option<mos6510::DebuggerMOSMutation> {
         let mut is_first_iteration = true;
 
@@ -47,7 +47,7 @@ impl DebuggerCli {
             writeln!(&mut status, "MOS REGS {}", mos.reg()).unwrap();
             writeln!(&mut status, "MOS STATE: {}", mos.state()).unwrap();
             if self.vic_status_dump {
-                writeln!(&mut status, "VIC DUMP: {}", vic.status_dump()).unwrap();
+                writeln!(&mut status, "VIC DUMP: {}", vic.borrow().status_dump()).unwrap();
             }
             let status = status.trim_end();
 
@@ -168,10 +168,10 @@ beam on|off             Highlight raster beam position
                         .unwrap();
 
                     match (opc, usize::from_str(line)) {
-                        ("b", Ok(line)) => vic.add_raster_breakpoint(line),
-                        ("b", Err(_)) if line == "*" => vic.break_on_every_raster_line(true),
-                        ("d", Ok(line)) => vic.remove_raster_breakpoint(line),
-                        ("d", Err(_)) if line == "*" => vic.break_on_every_raster_line(false),
+                        ("b", Ok(line)) => vic.borrow_mut().add_raster_breakpoint(line),
+                        ("b", Err(_)) if line == "*" => vic.borrow_mut().break_on_every_raster_line(true),
+                        ("d", Ok(line)) => vic.borrow_mut().remove_raster_breakpoint(line),
+                        ("d", Err(_)) if line == "*" => vic.borrow_mut().break_on_every_raster_line(false),
                         (_, Err(err)) => println!("{}", err),
                         (_, Ok(_)) => unreachable!(),
                     }
@@ -331,8 +331,8 @@ beam on|off             Highlight raster beam position
                     return Some(mos6510::DebuggerMOSMutation::SetPC(addr));
                 }
                 x if x.starts_with("beam ") => match x.split(' ').collect::<Vec<_>>().get(1) {
-                    Some(&"on") => vic.highlight_raster_beam(true),
-                    Some(&"off") => vic.highlight_raster_beam(false),
+                    Some(&"on") => vic.borrow_mut().highlight_raster_beam(true),
+                    Some(&"off") => vic.borrow_mut().highlight_raster_beam(false),
                     Some(arg) => {
                         println!("Invalid arg {:?}", arg);
                         continue;
@@ -356,7 +356,7 @@ impl mos6510::DebuggerUI for DebuggerCli {
         &mut self,
         action: mos6510::DebuggerPostDecodePreApplyCbAction,
         mos: &mos6510::MOS6510,
-        vic: &mut dyn RasterBreakpointBackend,
+        vic: crate::utils::R2C<dyn RasterBreakpointBackend>,
     ) -> Option<mos6510::DebuggerMOSMutation> {
         assert_eq!(action, mos6510::DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt);
         let ret = self.do_loop(mos, vic);

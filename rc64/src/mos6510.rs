@@ -534,7 +534,7 @@ pub trait DebuggerUI {
         &mut self,
         action: DebuggerPostDecodePreApplyCbAction,
         mos: &MOS6510,
-        vic: &mut dyn RasterBreakpointBackend,
+        vic: R2C<dyn RasterBreakpointBackend>,
     ) -> Option<DebuggerMOSMutation>;
 }
 
@@ -727,10 +727,9 @@ impl MOS6510 {
         assert!(self.debugger.try_borrow().is_ok());
         let mos_mutation = match action {
             None => None,
-            Some(action @ DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt) => self
-                .debugger_ui
-                .borrow_mut()
-                .handle_post_decode_pre_apply_action(action, &self, &mut *vic.borrow_mut()),
+            Some(action @ DebuggerPostDecodePreApplyCbAction::BreakToDebugPrompt) => {
+                self.debugger_ui.borrow_mut().handle_post_decode_pre_apply_action(action, &self, vic)
+            }
             Some(DebuggerPostDecodePreApplyCbAction::StopEmulatorAfterHavingReachedSelfJump) => {
                 eprintln!("self-jump reached, stopping emulator");
                 self.state = State::Stopped { interrupts: self.state.interrupts().clone() };
