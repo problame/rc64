@@ -34,9 +34,9 @@ impl MemoryView {
 
     pub fn read(&self, addr: u16) -> u8 {
         if addr == 0 {
-            return self.banking_state.cpu_control_lines.bits();
+            return 0b111;
         } else if addr == 1 {
-            return self.banking_state.expansion_port.bits();
+            return self.banking_state.cpu_control_lines.bits();
         }
 
         for segment in self.banking_state.iter() {
@@ -50,11 +50,9 @@ impl MemoryView {
 
     pub fn write(&mut self, addr: u16, val: u8) {
         if addr == 0 {
-            self.banking_state
-                .update(BankingStateUpdate::CpuControlLines(CpuControlLines::from_bits_truncate(val)))
+            assert_eq!(val & 0b111, 0b111);
         } else if addr == 1 {
-            self.banking_state
-                .update(BankingStateUpdate::ExpansionPort(ExpansionPort::from_bits_truncate(val)))
+            self.banking_state.update(CpuControlLines::from_bits_truncate(val));
         }
 
         for segment in self.banking_state.iter() {
@@ -98,20 +96,14 @@ pub enum MemoryAreaKind {
     CartRomHi,
 }
 
-struct BankingState {
+#[derive(Debug)]
+pub struct BankingState {
     cpu_control_lines: CpuControlLines,
-    expansion_port: ExpansionPort,
     banking: Vec<Segment>,
 }
 
-#[derive(Debug)]
-enum BankingStateUpdate {
-    CpuControlLines(CpuControlLines),
-    ExpansionPort(ExpansionPort),
-}
-
 bitflags! {
-    struct CpuControlLines: u8 {
+    pub struct CpuControlLines: u8 {
         #[allow(clippy::inconsistent_digit_grouping)]
         const LORAM = 0b00000_001;
         #[allow(clippy::inconsistent_digit_grouping)]
@@ -121,22 +113,10 @@ bitflags! {
     }
 }
 
-bitflags! {
-    struct ExpansionPort: u8 {
-        #[allow(clippy::inconsistent_digit_grouping)]
-        const GAME = 0b000000_01;
-        #[allow(clippy::inconsistent_digit_grouping)]
-        const EXROM = 0b000000_10;
-    }
-}
-
 impl Default for BankingState {
     fn default() -> BankingState {
-        let mut b = BankingState {
-            cpu_control_lines: CpuControlLines::default(),
-            expansion_port: ExpansionPort::default(),
-            banking: Vec::with_capacity(20),
-        };
+        let mut b =
+            BankingState { cpu_control_lines: CpuControlLines::default(), banking: Vec::with_capacity(20) };
         b.update_banking();
         b
     }
@@ -148,28 +128,12 @@ impl Default for CpuControlLines {
     }
 }
 
-impl Default for ExpansionPort {
-    fn default() -> Self {
-        ExpansionPort::all()
-    }
-}
-
 impl BankingState {
-    pub fn update(&mut self, update: BankingStateUpdate) {
-        match update {
-            BankingStateUpdate::CpuControlLines(value) => {
-                if self.cpu_control_lines != value {
-                    println!("CPU control lines update: {:?} -> {:?}", self.cpu_control_lines, value)
-                }
-                self.cpu_control_lines = value;
-            }
-            BankingStateUpdate::ExpansionPort(value) => {
-                if self.expansion_port != value {
-                    println!("Expansion port update: {:?} -> {:?}", self.expansion_port, value)
-                }
-                self.expansion_port = value;
-            }
+    pub fn update(&mut self, value: CpuControlLines) {
+        if self.cpu_control_lines != value {
+            println!("CPU control lines update: {:?} -> {:?}", self.cpu_control_lines, value)
         }
+        self.cpu_control_lines = value;
         self.update_banking()
     }
 
@@ -184,8 +148,8 @@ impl BankingState {
 
         // we don't support cartridges => emulate that a catridge is _not_ plugged in
         // by emulating the pull-up resisitor which puts the pins to default logical 1
-        let game = true; // self.expansion_port.contains(ExpansionPort::GAME);
-        let exrom = true; // self.expansion_port.contains(ExpansionPort::EXROM);
+        let game = true;
+        let exrom = true;
 
         let combined = {
             let mut v: u16 = 0;
@@ -235,38 +199,38 @@ impl BankingState {
         // ModeTable from https://www.c64-wiki.com/wiki/Bank_Switching#Mode_Table
         use MemoryAreaKind::*;
         match combined {
-            31 => config!(RAM, RAM, RAM, BasicRom, RAM, IO, KernelRom),
-            30 => config!(RAM, RAM, RAM, RAM, RAM, IO, KernelRom),
-            29 => config!(RAM, RAM, RAM, RAM, RAM, IO, RAM),
-            28 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
-            27 => config!(RAM, RAM, RAM, BasicRom, RAM, CharRom, KernelRom),
-            26 => config!(RAM, RAM, RAM, RAM, RAM, CharRom, KernelRom),
-            25 => config!(RAM, RAM, RAM, RAM, RAM, CharRom, RAM),
-            24 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
-            23 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
-            22 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
-            21 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
-            20 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
-            19 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
-            18 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
-            17 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
-            16 => config!(RAM, Unmapped, CartRomLow, Unmapped, Unmapped, IO, CartRomHi),
-            15 => config!(RAM, RAM, CartRomLow, BasicRom, RAM, IO, KernelRom),
-            14 => config!(RAM, RAM, RAM, RAM, RAM, IO, KernelRom),
-            13 => config!(RAM, RAM, RAM, RAM, RAM, IO, RAM),
-            12 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
-            11 => config!(RAM, RAM, CartRomLow, BasicRom, RAM, CharRom, KernelRom),
-            10 => config!(RAM, RAM, RAM, RAM, RAM, CharRom, KernelRom),
-            9 => config!(RAM, RAM, RAM, RAM, RAM, CharRom, RAM),
-            8 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
-            7 => config!(RAM, RAM, CartRomLow, CartRomHi, RAM, IO, KernelRom),
-            6 => config!(RAM, RAM, RAM, CartRomHi, RAM, IO, KernelRom),
-            5 => config!(RAM, RAM, RAM, RAM, RAM, IO, RAM),
-            4 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
-            3 => config!(RAM, RAM, CartRomLow, CartRomHi, RAM, CharRom, KernelRom),
-            2 => config!(RAM, RAM, RAM, CartRomHi, RAM, CharRom, KernelRom),
-            1 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
-            0 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
+            0b011_111 => config!(RAM, RAM, RAM, BasicRom, RAM, IO, KernelRom),
+            0b011_110 => config!(RAM, RAM, RAM, RAM, RAM, IO, KernelRom),
+            0b011_101 => config!(RAM, RAM, RAM, RAM, RAM, IO, RAM),
+            0b011_100 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
+            0b011_011 => config!(RAM, RAM, RAM, BasicRom, RAM, CharRom, KernelRom),
+            0b011_010 => config!(RAM, RAM, RAM, RAM, RAM, CharRom, KernelRom),
+            0b011_001 => config!(RAM, RAM, RAM, RAM, RAM, CharRom, RAM),
+            0b011_000 => config!(RAM, RAM, RAM, RAM, RAM, RAM, RAM),
+            23 => unreachable!(),
+            22 => unreachable!(),
+            21 => unreachable!(),
+            20 => unreachable!(),
+            19 => unreachable!(),
+            18 => unreachable!(),
+            17 => unreachable!(),
+            16 => unreachable!(),
+            15 => unreachable!(),
+            14 => unreachable!(),
+            13 => unreachable!(),
+            12 => unreachable!(),
+            11 => unreachable!(),
+            10 => unreachable!(),
+            9 => unreachable!(),
+            8 => unreachable!(),
+            7 => unreachable!(),
+            6 => unreachable!(),
+            5 => unreachable!(),
+            4 => unreachable!(),
+            3 => unreachable!(),
+            2 => unreachable!(),
+            1 => unreachable!(),
+            0 => unreachable!(),
             _ => assert!(combined < 32, "{}", combined),
         }
 
@@ -340,47 +304,5 @@ mod tests {
         fn write(&mut self, _addr: u16, _d: u8) -> WriteResult {
             return self.1;
         }
-    }
-
-    #[test]
-    fn test_default_memory_view() {
-        let areas = enum_map::enum_map! {
-            MemoryAreaKind::BasicRom => r2c_new!(MockArea(0, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::KernelRom => r2c_new!(MockArea(1, WriteResult::Ignored)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::IO1 => r2c_new!(MockArea(2, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::IO2 => r2c_new!(MockArea(3, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::CIA2 => r2c_new!(MockArea(4, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::CIA1 => r2c_new!(MockArea(5, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::ColorRam => r2c_new!(MockArea(6, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::SID => r2c_new!(MockArea(7, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::VIC => r2c_new!(MockArea(8, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::CharRom => r2c_new!(MockArea(9, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::Unmapped => r2c_new!(MockArea(10, WriteResult::Wrote)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::CartRomHi => r2c_new!(MockArea(11, WriteResult::Ignored)) as R2C<dyn MemoryArea>,
-            MemoryAreaKind::CartRomLow => r2c_new!(MockArea(12, WriteResult::Ignored)) as R2C<dyn MemoryArea>,
-        };
-        let ram = r2c_new!(RAM::default());
-
-        let mut mv = MemoryView::new(areas, ram);
-
-        mv.write(0x23, 42);
-        assert_eq!(mv.read(0x23), 42);
-
-        // write to vic control registers, these capture
-        mv.write(0xd023, 42);
-        assert_eq!(mv.read(0xd023), 8); // mock for vic returns 8
-
-        // test writethrough areas (i.e. KERNAL ROM)
-        mv.write(0xe023, 42);
-        assert_eq!(mv.read(0xe023), 1);
-        assert_eq!(mv.ram.borrow().read(0xe023), 42);
-        // now unmap kernal rom by unsetting
-        mv.write(0x0000, mv.banking_state.cpu_control_lines.bits() & !(0x2));
-        assert_eq!(mv.read(0xe023), 42);
-        assert_eq!(mv.ram.borrow().read(0xe023), 42);
-        // now remap kernal rom by setting KERNAL
-        mv.write(0x0000, mv.banking_state.cpu_control_lines.bits() | (0x2));
-        assert_eq!(mv.read(0xe023), 1);
-        assert_eq!(mv.ram.borrow().read(0xe023), 42);
     }
 }
