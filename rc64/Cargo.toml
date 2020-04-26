@@ -9,8 +9,10 @@ edition = "2018"
 default-run = "rc64"
 
 [features]
-default = [ "headless-chicken" ]
+default = [ "headless-chicken--cia", "headless-chicken--main" ]
 headless-chicken = []
+headless-chicken--cia = []
+headless-chicken--main = []
 
 
 [[bin]]

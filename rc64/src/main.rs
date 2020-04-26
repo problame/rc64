@@ -8,7 +8,11 @@ extern crate bitflags;
 extern crate derive_more;
 
 #[macro_use]
+mod r2c;
+
+#[macro_use]
 mod utils;
+
 mod cia;
 mod color_ram;
 mod interrupt;
@@ -28,6 +32,7 @@ mod debugger_cli;
 use crate::cia::keyboard::EmulatedKeyboard;
 use crate::cia::{CIAKind, CIA};
 use crate::color_ram::ColorRAM;
+use crate::mos6510::WriteResult;
 use crate::ram::RAM;
 use crate::utils::R2C;
 use crate::vic20::RasterBreakpointBackend;
@@ -37,13 +42,19 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use structopt::StructOpt;
 
-struct UnimplMemoryArea;
+struct UnimplMemoryArea(&'static str, Option<(u8, WriteResult)>);
 impl mos6510::MemoryArea for UnimplMemoryArea {
     fn read(&self, _addr: u16) -> u8 {
-        unimpl!(0)
+        match self.1 {
+            Some((r, _)) => r,
+            None => unimplemented!("unimplemented memory area  {:?}", self.0),
+        }
     }
-    fn write(&mut self, _addr: u16, _d: u8) -> mos6510::WriteResult {
-        unimpl!(mos6510::WriteResult::Ignored)
+    fn write(&mut self, _addr: u16, _d: u8) -> WriteResult {
+        match self.1 {
+            Some((_, w)) => w,
+            None => unimplemented!("unimplemented memory area {:?}", self.0),
+        }
     }
 }
 
@@ -144,17 +155,17 @@ fn main() {
     let areas = enum_map::enum_map! {
         MemoryAreaKind::BasicRom =>  r2c_new!(rom::stock::BASIC_ROM) as R2C<dyn MemoryArea>,
         MemoryAreaKind::KernelRom => kernal.clone(),
-        MemoryAreaKind::IO1 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::IO2 =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::IO1 =>       r2c_new!(UnimplMemoryArea("io1", None)) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::IO2 =>       r2c_new!(UnimplMemoryArea("io2", None)) as R2C<dyn MemoryArea>,
         MemoryAreaKind::CIA1 =>      cia1.clone(),
         MemoryAreaKind::CIA2 =>      cia2.clone(),
         MemoryAreaKind::ColorRam =>  color_ram.clone() as R2C<dyn MemoryArea>,
-        MemoryAreaKind::SID =>       r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::SID =>       r2c_new!(UnimplMemoryArea("sid", Some((0, WriteResult::Ignored)))) as R2C<dyn MemoryArea>,
         MemoryAreaKind::VIC =>       vic20.clone(),
         MemoryAreaKind::CharRom =>   r2c_new!(rom::stock::CHAR_ROM) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::Unmapped =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::CartRomLow =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
-        MemoryAreaKind::CartRomHi =>      r2c_new!(UnimplMemoryArea) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::Unmapped =>      r2c_new!(UnimplMemoryArea("unmapped", None)) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CartRomLow =>      r2c_new!(UnimplMemoryArea("car_rom_low", None)) as R2C<dyn MemoryArea>,
+        MemoryAreaKind::CartRomHi =>      r2c_new!(UnimplMemoryArea("car_rom_high", None)) as R2C<dyn MemoryArea>,
     };
 
     let debugger = r2c_new!(mos6510::Debugger::new(vic20.clone() as R2C<dyn RasterBreakpointBackend>));

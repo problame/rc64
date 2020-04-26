@@ -1,28 +1,14 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
-pub type R2C<T> = Rc<RefCell<T>>;
-macro_rules! r2c_new {
-    ($val: expr) => {{
-        use std::cell::RefCell;
-        use std::rc::Rc;
-        Rc::new(RefCell::new($val))
-    }};
-}
+pub use super::r2c::R2C;
 
 macro_rules! unimpl {
-    ($retval: expr) => {{
-        if cfg!(feature = "headless-chicken") {
+    ($retval:expr => $scope:literal) => {{
+        if cfg!(feature = $scope) {
             $retval
         } else {
             unimplemented!()
         }
     }};
-    () => {{
-        if cfg!(not(feature = "headless-chicken")) {
-            unimplemented!()
-        } else {
-            ()
-        }
+    (=> $scope:literal) => {{
+        unimpl!(() => $scope)
     }};
 }
