@@ -884,15 +884,18 @@ impl MOS6510 {
             self.debugger.borrow_mut().ea_cb(ea.effective);
         }
 
-        let effective_addr_load = effective_addr.map(|a| self.mem.read(a.effective));
-
         struct InstrMatchArgs<'a> {
             instr: Instr,
             reg: &'a mut Regs,
             mem: &'a mut MemoryView,
             effective_addr: Option<u16>,
-            effective_addr_load: Option<u8>,
             next_pc: &'a mut Option<u16>,
+        }
+        impl<'a> InstrMatchArgs<'a> {
+            fn effective_addr_load(&self) -> u8 {
+                let ea = self.effective_addr.expect("when loading effective address, it must be set");
+                self.mem.read(ea)
+            }
         }
 
         impl<'a> StackHelper for InstrMatchArgs<'a> {
@@ -909,7 +912,6 @@ impl MOS6510 {
             instr,
             reg: &mut self.reg,
             effective_addr: effective_addr.map(|v| v.effective),
-            effective_addr_load,
             next_pc: &mut next_pc,
             mem: &mut self.mem,
         });
@@ -955,15 +957,13 @@ impl MOS6510 {
                 /***************** Load/Store Operations ******************/
                 // LDA 	Load Accumulator 	N,Z
                 Instr(LDA, Imm(i)) => args.reg.lda(i),
-                mi!(LDA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
-                    args.reg.lda(args.effective_addr_load.unwrap())
-                }
+                mi!(LDA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.lda(args.effective_addr_load()),
                 // LDX 	Load X Register 	N,Z
                 Instr(LDX, Imm(i)) => args.reg.ldx(i),
-                mi!(LDX, Zpi, ZpY, Abs, AbY) => args.reg.ldx(args.effective_addr_load.unwrap()),
+                mi!(LDX, Zpi, ZpY, Abs, AbY) => args.reg.ldx(args.effective_addr_load()),
                 // LDY 	Load Y Register 	N,Z
                 Instr(LDY, Imm(i)) => args.reg.ldy(i),
-                mi!(LDY, Zpi, ZpX, Abs, AbX) => args.reg.ldy(args.effective_addr_load.unwrap()),
+                mi!(LDY, Zpi, ZpX, Abs, AbX) => args.reg.ldy(args.effective_addr_load()),
                 // STA 	Store Accumulator
                 mi!(STA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
                     args.mem.write(args.effective_addr.unwrap(), args.reg.a)
@@ -1024,21 +1024,21 @@ impl MOS6510 {
                 // AND 	Logical AND 	N,Z
                 Instr(AND, Imm(i)) => args.reg.lda(args.reg.a & i),
                 mi!(AND, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
-                    args.reg.lda(args.reg.a & args.effective_addr_load.unwrap())
+                    args.reg.lda(args.reg.a & args.effective_addr_load())
                 }
                 // EOR 	Exclusive OR 	N,Z
                 Instr(EOR, Imm(i)) => args.reg.lda(args.reg.a ^ i),
                 mi!(EOR, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
-                    args.reg.lda(args.reg.a ^ args.effective_addr_load.unwrap())
+                    args.reg.lda(args.reg.a ^ args.effective_addr_load())
                 }
                 // ORA 	Logical Inclusive OR 	N,Z
                 Instr(ORA, Imm(i)) => args.reg.lda(args.reg.a | i),
                 mi!(ORA, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
-                    args.reg.lda(args.reg.a | args.effective_addr_load.unwrap())
+                    args.reg.lda(args.reg.a | args.effective_addr_load())
                 }
                 // BIT 	Bit Test 	N,V,Z
                 mi!(BIT, Zpi, Abs) => {
-                    let v = args.effective_addr_load.unwrap();
+                    let v = args.effective_addr_load();
                     args.reg.p.set(Flags::NEG, v & (1 << 7) != 0);
                     args.reg.p.set(Flags::OVFL, v & (1 << 6) != 0);
                     args.reg.p.set(Flags::ZERO, (args.reg.a & v) == 0);
@@ -1051,24 +1051,22 @@ impl MOS6510 {
                 // ADC 	Add with Carry 	N,V,Z,C
                 Instr(ADC, Imm(i)) => args.reg.add_to_a_with_carry_and_set_carry(i),
                 mi!(ADC, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
-                    args.reg.add_to_a_with_carry_and_set_carry(args.effective_addr_load.unwrap())
+                    args.reg.add_to_a_with_carry_and_set_carry(args.effective_addr_load())
                 }
                 // SBC 	Subtract with Carry 	N,V,Z,C
                 Instr(SBC, Imm(i)) => args.reg.sub_from_a_with_carry_and_set_carry(i),
                 mi!(SBC, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
-                    args.reg.sub_from_a_with_carry_and_set_carry(args.effective_addr_load.unwrap())
+                    args.reg.sub_from_a_with_carry_and_set_carry(args.effective_addr_load())
                 }
                 // CMP 	Compare accumulator 	N,Z,C
                 Instr(CMP, Imm(i)) => args.reg.cmp_a(i),
-                mi!(CMP, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => {
-                    args.reg.cmp_a(args.effective_addr_load.unwrap())
-                }
+                mi!(CMP, Zpi, ZpX, Abs, AbX, AbY, IzX, IzY) => args.reg.cmp_a(args.effective_addr_load()),
                 // CPX 	Compare X register 	N,Z,C
                 Instr(CPX, Imm(i)) => args.reg.cmp_x(i),
-                mi!(CPX, Zpi, Abs) => args.reg.cmp_x(args.effective_addr_load.unwrap()),
+                mi!(CPX, Zpi, Abs) => args.reg.cmp_x(args.effective_addr_load()),
                 // CPY 	Compare Y register 	N,Z,C
                 Instr(CPY, Imm(i)) => args.reg.cmp_y(i),
-                mi!(CPY, Zpi, Abs) => args.reg.cmp_y(args.effective_addr_load.unwrap()),
+                mi!(CPY, Zpi, Abs) => args.reg.cmp_y(args.effective_addr_load()),
 
                 /***************** Increments & Decrements ******************/
                 // Increment or decrement a memory location or one of the X or Y registers by one setting
@@ -1076,13 +1074,13 @@ impl MOS6510 {
 
                 // INC 	Increment a memory location 	N,Z
                 mi!(INC, Zpi, ZpX, Abs, AbX) => {
-                    let res = args.effective_addr_load.unwrap().overflowing_add(1).0;
+                    let res = args.effective_addr_load().overflowing_add(1).0;
                     args.mem.write(args.effective_addr.unwrap(), res);
                     args.reg.set_nz_flags(res);
                 }
                 // DEC 	Decrement a memory location 	N,Z
                 mi!(DEC, Zpi, ZpX, Abs, AbX) => {
-                    let res = args.effective_addr_load.unwrap().overflowing_sub(1).0;
+                    let res = args.effective_addr_load().overflowing_sub(1).0;
                     args.mem.write(args.effective_addr.unwrap(), res);
                     args.reg.set_nz_flags(res);
                 }
@@ -1109,7 +1107,7 @@ impl MOS6510 {
                     args.reg.set_nzc_flags(v, carry);
                 }
                 mi!(ASL, Zpi, ZpX, Abs, AbX) => {
-                    let oldvalue = args.effective_addr_load.unwrap();
+                    let oldvalue = args.effective_addr_load();
                     args.mem.write(args.effective_addr.unwrap(), oldvalue);
                     let (carry, v) = MOS6510::asl(oldvalue);
                     args.mem.write(args.effective_addr.unwrap(), v);
@@ -1123,7 +1121,7 @@ impl MOS6510 {
                     args.reg.p.set(Flags::NEG, false);
                 }
                 mi!(LSR, Zpi, ZpX, Abs, AbX) => {
-                    let (carry, v) = MOS6510::lsr(args.effective_addr_load.unwrap());
+                    let (carry, v) = MOS6510::lsr(args.effective_addr_load());
                     args.mem.write(args.effective_addr.unwrap(), v);
                     args.reg.set_nzc_flags(v, carry);
                     args.reg.p.set(Flags::NEG, false);
@@ -1136,7 +1134,7 @@ impl MOS6510 {
                 }
                 mi!(ROL, Zpi, ZpX, Abs, AbX) => {
                     let (carry, res) =
-                        MOS6510::rol(args.effective_addr_load.unwrap(), args.reg.p.contains(Flags::CARRY));
+                        MOS6510::rol(args.effective_addr_load(), args.reg.p.contains(Flags::CARRY));
                     args.mem.write(args.effective_addr.unwrap(), res);
                     args.reg.set_nzc_flags(res, carry);
                 }
@@ -1148,7 +1146,7 @@ impl MOS6510 {
                 }
                 mi!(ROR, Zpi, ZpX, Abs, AbX) => {
                     let (carry, res) =
-                        MOS6510::ror(args.effective_addr_load.unwrap(), args.reg.p.contains(Flags::CARRY));
+                        MOS6510::ror(args.effective_addr_load(), args.reg.p.contains(Flags::CARRY));
                     args.mem.write(args.effective_addr.unwrap(), res);
                     args.reg.set_nzc_flags(res, carry);
                 }
