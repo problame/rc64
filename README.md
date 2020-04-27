@@ -25,6 +25,7 @@ Have a look at our [final presentation](https://docs.google.com/presentation/d/1
 - [x] Kernal Boot-up & BASIC prompt input
 - [x] Start and run BASIC programs in `./rc64/prg_tests` (you have to `make -C rc64/prg_tests` them)
 - [x] Raster IRQ demos in `./rc64/asm_tests` (you have to `make -C rc64/asm_tests` them)
+  - No badline support
 - [x] Boulder PRG (Don't forget to set `--joystick1={}`)
 - [ ] Ninja PRG
   - no sprite support
