@@ -66,7 +66,7 @@ pub enum AutloadFileType {
     Bin0x0400,
 }
 
-use std::num::ParseIntError;
+use std::{num::ParseIntError, str::FromStr};
 
 fn parse_hex(src: &str) -> Result<u16, ParseIntError> {
     u16::from_str_radix(src, 16)
@@ -110,6 +110,35 @@ struct Args {
 
     #[structopt(long, help = "run for specified number of clock cycles, exit when reached")]
     exit_after_cycles: Option<u64>,
+
+    #[structopt(long, help = "joystick 1 mode. One of `none`, `wasd`, `numpad`", default_value = "none")]
+    joystick1: JoystickMode,
+
+    #[structopt(long, help = "joystick 2 mode ", default_value = "numpad")]
+    joystick2: JoystickMode,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum JoystickMode {
+    None,
+    Wasd,
+    NumPad,
+}
+
+#[derive(Debug, Display)]
+#[display(fmt = "invalid joystick mode: {}", _0)]
+pub struct InvalidJoystickModeError(String);
+impl FromStr for JoystickMode {
+    type Err = InvalidJoystickModeError;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let s = s.to_lowercase();
+        match &*s {
+            "none" => Ok(JoystickMode::None),
+            "wasd" => Ok(JoystickMode::Wasd),
+            "numpad" => Ok(JoystickMode::NumPad),
+            _ => Err(InvalidJoystickModeError(s)),
+        }
+    }
 }
 
 fn main() {
@@ -130,7 +159,7 @@ fn main() {
     let screen_and_peripheral_devices_backend: R2C<dyn cia::PeripheralDevicesBackend> = if args.no_gui {
         r2c_new!(backend::noninteractive::new())
     } else {
-        r2c_new!(backend::fb_minifb::Minifb::new(screen_buf_reader))
+        r2c_new!(backend::fb_minifb::Minifb::new(screen_buf_reader, (args.joystick1, args.joystick2)))
     };
 
     let vic20 = r2c_new!(vic20::VIC20::new(

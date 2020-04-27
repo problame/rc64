@@ -1,7 +1,7 @@
 use crate::cia::joystick::JoystickSwitch;
 use crate::cia::keyboard::{C64Key, KeyboardMatrix};
 use crate::cia::PeripheralDevicesBackend;
-use crate::vic20::framebuffer;
+use crate::{vic20::framebuffer, JoystickMode};
 use minifb::{Key, Window, WindowOptions};
 use spin::Mutex;
 use std::convert::TryFrom;
@@ -10,10 +10,11 @@ use std::sync::Arc;
 pub struct Minifb {
     pressed_keys: Arc<Mutex<Vec<Key>>>,
     _jh: std::thread::JoinHandle<()>,
+    joystick_mode: (JoystickMode, JoystickMode),
 }
 
 impl Minifb {
-    pub fn new(fb_buf: framebuffer::Reader) -> Self {
+    pub fn new(fb_buf: framebuffer::Reader, joystick_mode: (JoystickMode, JoystickMode)) -> Self {
         let pressed_keys = Arc::new(Mutex::new(Vec::new()));
 
         let _jh = {
@@ -35,7 +36,17 @@ impl Minifb {
             })
         };
 
-        Minifb { pressed_keys, _jh }
+        Minifb { pressed_keys, _jh, joystick_mode }
+    }
+
+    fn get_current_joystick_state(&self, joystick_mode: JoystickMode) -> JoystickSwitch {
+        self.pressed_keys
+            .lock()
+            .iter()
+            .cloned()
+            .map(|key| joystick_mode.event_from(key))
+            .filter_map(Result::ok)
+            .fold(JoystickSwitch::default(), std::ops::BitOr::bitor)
     }
 }
 
@@ -45,17 +56,11 @@ impl PeripheralDevicesBackend for Minifb {
     }
 
     fn get_current_joystick1_state(&self) -> JoystickSwitch {
-        JoystickSwitch::default()
+        self.get_current_joystick_state(self.joystick_mode.0)
     }
 
     fn get_current_joystick2_state(&self) -> JoystickSwitch {
-        self.pressed_keys
-            .lock()
-            .iter()
-            .cloned()
-            .map(JoystickSwitch::try_from)
-            .filter_map(Result::ok)
-            .fold(JoystickSwitch::default(), std::ops::BitOr::bitor)
+        self.get_current_joystick_state(self.joystick_mode.1)
     }
 }
 
@@ -188,24 +193,30 @@ impl TryFrom<Key> for C64Key {
     }
 }
 
-impl TryFrom<Key> for JoystickSwitch {
-    type Error = UnmappedKey;
-
-    fn try_from(key: Key) -> Result<Self, Self::Error> {
+impl JoystickMode {
+    fn event_from(&self, key: Key) -> Result<JoystickSwitch, UnmappedKey> {
         use Key::*;
-        match key {
-            NumPad1 => Err(UnmappedKey),
-            NumPad2 => Err(UnmappedKey),
-            NumPad3 => Err(UnmappedKey),
-            NumPad4 => Ok(JoystickSwitch::LEFT),
-            NumPad5 => Ok(JoystickSwitch::DOWN),
-            NumPad6 => Ok(JoystickSwitch::RIGHT),
-            NumPad7 => Err(UnmappedKey),
-            NumPad8 => Ok(JoystickSwitch::UP),
-            NumPad9 => Err(UnmappedKey),
-            NumPadEnter | NumPad0 => Ok(JoystickSwitch::FIRE),
-            Count => unreachable!(),
-            _ => Err(UnmappedKey),
+        match self {
+            JoystickMode::None => Err(UnmappedKey),
+            JoystickMode::Wasd => match key {
+                W => Ok(JoystickSwitch::UP),
+                A => Ok(JoystickSwitch::LEFT),
+                S => Ok(JoystickSwitch::DOWN),
+                D => Ok(JoystickSwitch::RIGHT),
+                Space => Ok(JoystickSwitch::FIRE),
+                Count => unreachable!(),
+                _ => Err(UnmappedKey),
+            },
+
+            JoystickMode::NumPad => match key {
+                NumPad8 => Ok(JoystickSwitch::UP),
+                NumPad4 => Ok(JoystickSwitch::LEFT),
+                NumPad5 => Ok(JoystickSwitch::DOWN),
+                NumPad6 => Ok(JoystickSwitch::RIGHT),
+                NumPadEnter | NumPad0 => Ok(JoystickSwitch::FIRE),
+                Count => unreachable!(),
+                _ => Err(UnmappedKey),
+            },
         }
     }
 }

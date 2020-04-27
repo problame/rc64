@@ -2,10 +2,6 @@
 
 Have a look at our [final presentation](https://docs.google.com/presentation/d/1JdwHQDP4C2LULtR_oQqrcnfqxXkiI-fZZ7yfw_HaI9g/edit?usp=sharing) for an introduction.
 
-## TODO
-
-- [ ] Joystick configuration (boulder dash needs Joystick 1, joy.basic needs Joystick 2)
-
 ## Highlights
 
 - [x] MOS6510 implementation passes Klaus Dormann's 6502 functional test suite (no BCD mode)
@@ -21,14 +17,15 @@ Have a look at our [final presentation](https://docs.google.com/presentation/d/1
 - [x] Cycle-accurate instruction execution duration
   - architectural behavior of each instruction applied in first cycle, though
 - [x] Joystick Support - try it in Boulder or with `./rc64/prg_tests/joy.prg`
+  - [x] Joystick configuration `--joystick{1,2}={none,numpad,wasd}`
 - [x] Rust Memory-Safety
 
 ### What Works And What Doesn't
 
 - [x] Kernal Boot-up & BASIC prompt input
-- [x] Start and run BASIC programs in `./rc64/prg_tests`
-- [x] Raster IRQ demos in `./rc64/asm_tests`
-- [x] Boulder PRG
+- [x] Start and run BASIC programs in `./rc64/prg_tests` (you have to `make -C rc64/prg_tests` them)
+- [x] Raster IRQ demos in `./rc64/asm_tests` (you have to `make -C rc64/asm_tests` them)
+- [x] Boulder PRG (Don't forget to set `--joystick1={}`)
 - [ ] Ninja PRG
   - no sprite support
 - [ ] Pacman PRG
