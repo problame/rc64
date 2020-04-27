@@ -1,0 +1,47 @@
+1 rem inspiration from  https://www.teodor.no/commodore/c64-sprites
+10 rem show of your sprite
+15 rem with your c64
+20 v=53248
+
+22 print chr$(147): poke v+21,0
+
+24 rem set border and background color 1 (d020, d021)
+25 poke 53280,5: poke 53281,1
+
+29 rem sprite 0 memory block is at block 192 => 192 * 64 = 0x3000  https://www.c64-wiki.com/wiki/Screen_RAM
+30 poke 2040,192
+
+40 for y = 0 to 62
+50 read a: poke (192*64)+y,a
+70 next y
+
+74 rem color sprite 0
+75 poke v+39,7
+
+79 rem enable x and y expansion of sprite 0
+80 rem poke v+23,1: poke v+29,1
+
+88 y=50: x=24
+
+89 rem set x and y coordinate of sprite 0
+90 poke v+0,x: poke v+1,y
+
+94 rem enable sprite 0
+95 poke v+21,1
+
+100 y=y+1: x=x+1
+110 if y = 255 then y = 1: x=1
+130 goto 90
+
+10665 rem sprite data
+10670 data 12,0,192,12,0,192
+10680 data 3,3,0,3,3,0
+10690 data 15,255,192,15,255,192
+10700 data 60,252,240,60,252,240
+10710 data 255,255,252,255,255,252
+10720 data 207,255,204,207,255,204
+10730 data 204,0,204,204,0,204
+10740 data 3,207,0,3,207,0
+10750 data 0,0,0,0,0,0
+10760 data 0,0,0,0,0,0
+10770 data 0,0,0
