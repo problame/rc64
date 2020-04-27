@@ -213,6 +213,59 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 }
                 _ => unimplemented!("Only support high-res/multicolor text mode for now"),
             }
+
+            // sprite 0
+            let sprite_number = 0;
+            if (self.regs.sprite_enabled & (1 << sprite_number)) != 0 {
+                let root = self.regs.coordinate_sprite[0];
+                let root_x_msb =
+                    (((self.regs.msbs_of_x_coordinates & (1 << sprite_number)) != 0) as usize) << 8;
+                let root_x = (root.x as usize) | root_x_msb;
+                let root_y = root.y as usize;
+
+                let x_expansion = (self.regs.sprite_expansion.x & (1 << sprite_number)) != 0;
+                let multicolor_mode = (self.regs.sprite_multicolor & (1 << sprite_number)) != 0;
+                assert!(!multicolor_mode, "sprite multicolor mode not supported");
+                let width = if x_expansion { 24 * 2 } else { 24 };
+
+                let y_expansion = (self.regs.sprite_expansion.y & (1 << sprite_number)) != 0;
+                let height = if y_expansion { 21 * 2 } else { 21 };
+
+                let in_rect = (x >= root_x && x < root_x + width) && (y >= root_y && y < root_y + height);
+                if in_rect {
+                    let abs_coords_beam = Point((self.x - X_START) as usize, self.y());
+                    for i in 0..width {
+                        let c = if multicolor_mode {
+                            unimplemented!();
+                        } else {
+                            let sprite_block_ptr =
+                                self.mem.read_data(mem::U14::try_from(0x07f8 as usize).unwrap()); // https://www.c64-wiki.com/wiki/Screen_RAM
+                                                                                                  // TODO shouldn't the above read only be allowed in banking state 0
+                            let sprite_bm_base = (sprite_block_ptr as usize) << 6;
+                            // the lower 6 bytes of the sprite_bm_ptr consist of
+                            // 3bytes per row if not expanded
+                            // 21 rows
+                            // => 63bytes (+ 1 byte )
+                            let sprite_bm_ptr = sprite_bm_base + (y - root_y) * 3 + (x - root_x) / 8;
+                            let sprite_bm = self.mem.read_data(mem::U14::try_from(sprite_bm_ptr).unwrap());
+
+                            if (sprite_bm & (1 << (7 - i))) != 0 {
+                                Some(Color::Green)
+                            } else {
+                                None
+                            }
+                        };
+                        if let Some(c) = c {
+                            self.screen.set_px(
+                                Point(abs_coords_beam.0 + (root_x - x) + i, abs_coords_beam.1),
+                                ARGB::from(c),
+                            );
+                        } else {
+                            // transparent
+                        }
+                    }
+                }
+            }
         } else if inside_border_zone {
             let c = Color::try_from(self.regs.border_color.bits()).unwrap();
             let colors = [c, c, c, c, c, c, c, c];
