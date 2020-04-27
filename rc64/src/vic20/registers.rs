@@ -294,7 +294,7 @@ impl<T> MemoryArea for VIC20<T> {
         match addr {
             0x00..=0x0f => {
                 // Access to x and y coordinates in alternating order
-                let mut c = self.regs.coordinate_sprite[addr >> 1];
+                let c = &mut self.regs.coordinate_sprite[addr >> 1];
                 if addr % 2 == 0 {
                     c.x = val
                 } else {
