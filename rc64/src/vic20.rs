@@ -15,7 +15,9 @@ use std::iter;
 
 use self::framebuffer::ARGB;
 pub use self::mem::BankingState;
+use bitvec::prelude::*;
 
+use mem::U14;
 use num_enum::TryFromPrimitive;
 
 /// https://www.c64-wiki.com/wiki/Color
@@ -165,7 +167,6 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                     let d = (ch as usize) << 3;
                     let rc = y & 0b111;
 
-                    use bitvec::prelude::*;
                     let bm: u8 = self.mem.read_data(cb + d + rc);
                     let bm = bm.bits::<Msb0>();
 
@@ -214,56 +215,47 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 _ => unimplemented!("Only support high-res/multicolor text mode for now"),
             }
 
-            // sprite 0
-            let sprite_number = 0;
-            if (self.regs.sprite_enabled & (1 << sprite_number)) != 0 {
-                let root = self.regs.coordinate_sprite[0];
-                let root_x_msb =
-                    (((self.regs.msbs_of_x_coordinates & (1 << sprite_number)) != 0) as usize) << 8;
-                let root_x = (root.x as usize) | root_x_msb;
-                let root_y = root.y as usize;
+            let vm = self.regs.memory_pointers.video_matrix_base();
+            for (sprite_number, sprite) in
+                self.regs.sprite_iter_ordered().enumerate().filter(|(_, sprite)| sprite.enabled)
+            {
+                assert!(!sprite.multicolor, "sprite multicolor mode not supported");
+                let width = if sprite.x_expansion { 24 * 2 } else { 24 };
 
-                let x_expansion = (self.regs.sprite_expansion.x & (1 << sprite_number)) != 0;
-                let multicolor_mode = (self.regs.sprite_multicolor & (1 << sprite_number)) != 0;
-                assert!(!multicolor_mode, "sprite multicolor mode not supported");
-                let width = if x_expansion { 24 * 2 } else { 24 };
+                let height = if sprite.y_expansion { 21 * 2 } else { 21 };
 
-                let y_expansion = (self.regs.sprite_expansion.y & (1 << sprite_number)) != 0;
-                let height = if y_expansion { 21 * 2 } else { 21 };
-
-                let in_rect = (x >= root_x && x < root_x + width) && (y >= root_y && y < root_y + height);
+                let in_rect =
+                    (x >= sprite.x && x < sprite.x + width) && (y >= sprite.y && y < sprite.y + height);
                 if in_rect {
-                    let abs_coords_beam = Point((self.x - X_START) as usize, self.y());
-                    for i in 0..width {
-                        let c = if multicolor_mode {
+                    // p-access
+                    let addr = (vm & U14::try_from(0b1111_0000000_000u16).unwrap())
+                        | U14::try_from(0b0000_1111111_000u16).unwrap()
+                        | U14::try_from(sprite_number & 0b0000_0000000_111).unwrap();
+
+                    let sprite_block_ptr = self.mem.read_data(addr); // https://www.c64-wiki.com/wiki/Screen_RAM
+                                                                     // TODO shouldn't the above read only be allowed in banking state 0
+
+                    // s-access
+                    let sprite_bm_base = (sprite_block_ptr as usize) << 6;
+                    // the lower 6 bytes of the sprite_bm_ptr consist of
+                    // 3bytes per row if not expanded
+                    // 21 rows
+                    // => 63bytes (+ 1 byte )
+                    let sprite_bm_ptr = sprite_bm_base + (y - sprite.y) * 3 + (x - sprite.x) / 8;
+                    let sprite_bm = self.mem.read_data(mem::U14::try_from(sprite_bm_ptr).unwrap());
+                    let sprite_bm = sprite_bm.bits::<Msb0>();
+
+                    self.draw_horizontal_opts(sprite_bm.into_iter().map(|bit| {
+                        if sprite.multicolor {
                             unimplemented!();
                         } else {
-                            let sprite_block_ptr =
-                                self.mem.read_data(mem::U14::try_from(0x07f8 as usize).unwrap()); // https://www.c64-wiki.com/wiki/Screen_RAM
-                                                                                                  // TODO shouldn't the above read only be allowed in banking state 0
-                            let sprite_bm_base = (sprite_block_ptr as usize) << 6;
-                            // the lower 6 bytes of the sprite_bm_ptr consist of
-                            // 3bytes per row if not expanded
-                            // 21 rows
-                            // => 63bytes (+ 1 byte )
-                            let sprite_bm_ptr = sprite_bm_base + (y - root_y) * 3 + (x - root_x) / 8;
-                            let sprite_bm = self.mem.read_data(mem::U14::try_from(sprite_bm_ptr).unwrap());
-
-                            if (sprite_bm & (1 << (7 - i))) != 0 {
-                                Some(Color::Green)
+                            if *bit {
+                                Some(sprite.color)
                             } else {
                                 None
                             }
-                        };
-                        if let Some(c) = c {
-                            self.screen.set_px(
-                                Point(abs_coords_beam.0 + (root_x - x) + i, abs_coords_beam.1),
-                                ARGB::from(c),
-                            );
-                        } else {
-                            // transparent
                         }
-                    }
+                    }));
                 }
             }
         } else if inside_border_zone {
@@ -363,11 +355,16 @@ impl<T> VIC20<T> {
         self.draw_horizontal_slice(&COLORS)
     }
 
-    fn draw_horizontal<I: ExactSizeIterator<Item = Color>>(&mut self, cols: I) {
+    fn draw_horizontal_opts<I: ExactSizeIterator<Item = Option<Color>>>(&self, cols: I) {
         let starting_point = Point((self.x - X_START) as usize, self.y());
         iter::successors(Some(starting_point), |p| Some(Point(p.0 + 1, p.1)))
             .zip(cols)
+            .filter_map(|(point, opt)| opt.map(|col| (point, col)))
             .for_each(|(point, col)| self.screen.set_px(point, ARGB::from(col)))
+    }
+
+    fn draw_horizontal<I: ExactSizeIterator<Item = Color>>(&mut self, cols: I) {
+        self.draw_horizontal_opts(cols.map(Some))
     }
 
     #[inline(always)]

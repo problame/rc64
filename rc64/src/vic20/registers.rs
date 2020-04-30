@@ -115,7 +115,7 @@
 //!    are called "RASTER" in the following. A write access to these bits sets
 //!    the comparison line for the raster interrupt (see section 3.12.).
 
-use super::VIC20;
+use super::{mem::U4, Color, VIC20};
 use crate::mos6510::{MemoryArea, WriteResult};
 use crate::vic20::mem::U14;
 
@@ -151,7 +151,7 @@ pub(super) struct Registers {
 
     pub border_color: BorderColor,
     pub background_color: [u8; 4],
-    pub color_sprite: [u8; 8],
+    pub color_sprite: [U4; 8],
 }
 
 bitflags! {
@@ -271,7 +271,7 @@ impl<T> MemoryArea for VIC20<T> {
             0x20 => self.regs.border_color.bits() | 0b1111_0000,
             0x21..=0x24 => self.regs.background_color[addr - 0x21] | 0b1111_0000,
             0x25..=0x26 => self.regs.sprite_multicolors[addr - 0x25] | 0b1111_0000,
-            0x27..=0x2e => self.regs.color_sprite[addr - 0x27] | 0b1111_0000,
+            0x27..=0x2e => u8::from(self.regs.color_sprite[addr - 0x27]) | 0b1111_0000,
             0x2f..=0x3f => 0xff,
             _ => unreachable!("0x40..=std::usize::MAX should be masked out"),
         };
@@ -345,11 +345,76 @@ impl<T> MemoryArea for VIC20<T> {
             0x20 => self.regs.border_color = BorderColor::from_bits_truncate(val),
             0x21..=0x24 => self.regs.background_color[addr - 0x21] = val,
             0x25..=0x26 => self.regs.sprite_multicolors[addr - 0x25] = val,
-            0x27..=0x2e => self.regs.color_sprite[addr - 0x27] = val,
+            0x27..=0x2e => self.regs.color_sprite[addr - 0x27] = U4::from_u8_truncate(val),
             0x2f..=0x3f => (),
             _ => unreachable!("0x40..=std::usize::MAX should be masked out"),
         }
 
         WriteResult::Wrote
+    }
+}
+
+impl Registers {
+    pub fn sprite_iter_ordered<'a>(&'a self) -> impl Iterator<Item = Sprite> + 'a {
+        OrderedSpriteIterator { i: 0, regs: self }
+    }
+}
+
+pub struct Sprite {
+    //  0| $d000 |                  M0X                  | X coordinate sprite 0
+    // 16| $d010 |M7X8|M6X8|M5X8|M4X8|M3X8|M2X8|M1X8|M0X8| MSBs of X coordinates
+    pub x: usize,
+    //  1| $d001 |                  M0Y                  | Y coordinate sprite 0
+    pub y: usize,
+    // 21| $d015 | M7E| M6E| M5E| M4E| M3E| M2E| M1E| M0E| Sprite enabled
+    pub enabled: bool,
+    // 23| $d017 |M7YE|M6YE|M5YE|M4YE|M3YE|M2YE|M1YE|M0YE| Sprite Y expansion
+    pub y_expansion: bool,
+    // 27| $d01b |M7DP|M6DP|M5DP|M4DP|M3DP|M2DP|M1DP|M0DP| Sprite data priority
+    pub data_priority: bool,
+    // 28| $d01c |M7MC|M6MC|M5MC|M4MC|M3MC|M2MC|M1MC|M0MC| Sprite multicolor
+    pub multicolor: bool,
+    // 29| $d01d |M7XE|M6XE|M5XE|M4XE|M3XE|M2XE|M1XE|M0XE| Sprite X expansion
+    pub x_expansion: bool,
+    // 30| $d01e | M7M| M6M| M5M| M4M| M3M| M2M| M1M| M0M| Sprite-sprite collision
+    // 31| $d01f | M7D| M6D| M5D| M4D| M3D| M2D| M1D| M0D| Sprite-data collision
+    // 37| $d025 |  - |  - |  - |  - |        MM0        | Sprite multicolor 0
+    // 38| $d026 |  - |  - |  - |  - |        MM1        | Sprite multicolor 1
+
+    // 39| $d027 |  - |  - |  - |  - |        M0C        | Color sprite 0
+    pub color: Color,
+}
+
+pub struct OrderedSpriteIterator<'a> {
+    i: usize,
+    regs: &'a Registers,
+}
+
+#[inline]
+fn nth_bit(flags: u8, n: usize) -> bool {
+    (flags & (1 << n)) != 0
+}
+
+impl<'a> Iterator for OrderedSpriteIterator<'a> {
+    type Item = Sprite;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.i < 8 {
+            let next = Sprite {
+                enabled: nth_bit(self.regs.sprite_enabled, self.i),
+                data_priority: nth_bit(self.regs.sprite_data_priority, self.i),
+                multicolor: nth_bit(self.regs.sprite_multicolor, self.i),
+                x_expansion: nth_bit(self.regs.sprite_expansion.x, self.i),
+                y_expansion: nth_bit(self.regs.sprite_expansion.y, self.i),
+                color: Color::from(self.regs.color_sprite[self.i]),
+                x: (self.regs.coordinate_sprite[self.i].x as usize)
+                    | ((nth_bit(self.regs.msbs_of_x_coordinates, self.i) as usize) << 8),
+                y: self.regs.coordinate_sprite[self.i].y as usize,
+            };
+
+            self.i += 1;
+            Some(next)
+        } else {
+            None
+        }
     }
 }

@@ -9,13 +9,19 @@ use derive_more::{Add, Into, Sub};
 use enum_map::{enum_map, EnumMap};
 use lazy_static::lazy_static;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Add, Sub, Into)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Add, Sub, Into, BitAnd, BitOr)]
 pub struct U14(u16);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Add, Sub, Into)]
 pub struct U12(u16);
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Add, Sub, Into)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Add, Sub, Into, Default)]
 pub struct U4(pub u8);
+
+impl U4 {
+    pub fn from_u8_truncate(n: u8) -> U4 {
+        U4(n & 0b0000_1111)
+    }
+}
 
 const U14_MAX: usize = (1 << 14) - 1;
 
