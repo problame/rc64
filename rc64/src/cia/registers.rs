@@ -116,10 +116,10 @@ impl<T> Register for DataA<T> {
 /// Bit 7:  Select Bit 7 of Data Port A for input or output (0=input, 1=output)
 impl<T> Register for DataDirectionA<T> {
     fn read(&self) -> u8 {
-        unimpl!(0 => "headless-chicken--cia")
+        unimpl!(0 => crate::hc::Domain::Cia)
     }
     fn write(&self, _val: u8) {
-        unimpl!(=> "headless-chicken--cia")
+        unimpl!(=>crate::hc::Domain::Cia)
     }
 }
 
@@ -186,11 +186,11 @@ impl<T> Register for DataB<T> {
 
                 out
             }
-            DataPortBackend::CIA2 { .. } => unimpl!(0b1000_0000 => "headless-chicken--cia"),
+            DataPortBackend::CIA2 { .. } => unimpl!(0b1000_0000 =>crate::hc::Domain::Cia),
         }
     }
     fn write(&self, _val: u8) {
-        unimpl!(=> "headless-chicken--cia")
+        unimpl!(=>crate::hc::Domain::Cia)
     }
 }
 
@@ -207,10 +207,10 @@ impl<T> Register for DataB<T> {
 /// Bit 7:  Select Bit 7 of Data Port B for input or output (0=input, 1=output)
 impl<T> Register for DataDirectionB<T> {
     fn read(&self) -> u8 {
-        unimpl!(0=> "headless-chicken--cia")
+        unimpl!(0=>crate::hc::Domain::Cia)
     }
     fn write(&self, _val: u8) {
-        unimpl!(=> "headless-chicken--cia")
+        unimpl!(=>crate::hc::Domain::Cia)
     }
 }
 
@@ -331,7 +331,7 @@ impl Register for Timer {
 /// writing to the TOD registers sets the TOD clock.
 impl Register for ControlTimer {
     fn read(&self) -> u8 {
-        unimpl!(0 => "headless-chicken--cia")
+        unimpl!(0 =>crate::hc::Domain::Cia)
     }
 
     fn write(&self, val: u8) {
@@ -366,7 +366,7 @@ impl Register for ControlTimer {
                 //     println!("Starting {:#?}", timer);
                 // }
             }
-            TimerInputMode::B(_) => unimpl!(=> "headless-chicken--cia"),
+            TimerInputMode::B(_) => unimpl!(=>crate::hc::Domain::Cia),
         }
     }
 }
@@ -413,19 +413,19 @@ bitflags! {
 /// Bit 7:  AM/PM Flag (1=PM, 0=AM)
 impl Register for RTClock {
     fn read(&self) -> u8 {
-        unimpl!(0=> "headless-chicken--cia")
+        unimpl!(0=>crate::hc::Domain::Cia)
     }
     fn write(&self, _val: u8) {
-        unimpl!(=> "headless-chicken--cia")
+        unimpl!(=>crate::hc::Domain::Cia)
     }
 }
 
 impl Register for SerialShift {
     fn read(&self) -> u8 {
-        unimpl!(0 => "headless-chicken--cia")
+        unimpl!(0 =>crate::hc::Domain::Cia)
     }
     fn write(&self, _val: u8) {
-        unimpl!(=> "headless-chicken--cia")
+        unimpl!(=>crate::hc::Domain::Cia)
     }
 }
 

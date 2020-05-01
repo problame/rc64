@@ -267,9 +267,7 @@ impl<T> MemoryArea for VIC20<T> {
             0x1c => self.regs.sprite_multicolor,
             0x1d => self.regs.sprite_expansion.x,
             0x1e => self.regs.sprite_sprite_collision,
-            0x1f => {
-                unimpl!(self.regs.sprite_data_collision => "headless-chicken--vic--sprite-data-collision")
-            } // vic20 does not fill written_pixels for data collisions yet!
+            0x1f => unimpl!(self.regs.sprite_data_collision => crate::hc::Domain::VicSpriteDataCollision), // vic20 does not fill written_pixels for data collisions yet!
             0x20 => self.regs.border_color.bits() | 0b1111_0000,
             0x21..=0x24 => self.regs.background_color[addr - 0x21] | 0b1111_0000,
             0x25..=0x26 => self.regs.sprite_multicolors[addr - 0x25] | 0b1111_0000,

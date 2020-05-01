@@ -8,10 +8,15 @@ extern crate bitflags;
 extern crate derive_more;
 
 #[macro_use]
-mod r2c;
+pub mod headless_chicken;
+pub use headless_chicken as hc;
 
 #[macro_use]
-mod utils;
+mod r2c;
+
+mod utils {
+    pub use super::r2c::R2C;
+}
 
 mod cia;
 mod color_ram;
@@ -116,6 +121,10 @@ struct Args {
 
     #[structopt(long, help = "joystick 2 mode ", default_value = "numpad")]
     joystick2: JoystickMode,
+
+    // in what domains headless chicken mode should be activated
+    #[structopt(long, use_delimiter(true), default_value = "cia,main,vic-sprite-data-collision")]
+    headless_chicken: Vec<crate::hc::Domain>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -143,6 +152,12 @@ impl FromStr for JoystickMode {
 
 fn main() {
     let args = Args::from_args();
+
+    let mut hc: u64 = 0;
+    for f in args.headless_chicken {
+        hc |= f as u64;
+    }
+    crate::hc::ENABLED.store(hc, std::sync::atomic::Ordering::SeqCst);
 
     let kernal = args.kernal.map_or_else(
         || r2c_new!(rom::stock::KERNAL) as R2C<dyn MemoryArea>,
