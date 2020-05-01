@@ -4,9 +4,18 @@ Have a look at our [final presentation](https://docs.google.com/presentation/d/1
 
 ## Highlights
 
-- [x] MOS6510 implementation passes Klaus Dormann's 6502 functional test suite (no BCD mode)
-  - just run `cargo test --release`
-- [x] Built-in Monitor Monitor
+- [x] MOS6510 implementation
+  - [x] passes Klaus Dormann's 6502 functional test suite in `no_decimal=1` mode
+    - just run `cargo test --release`
+  - [x] just enough BCD-mode support for ADC to make Pacman happy
+- [x] VIC20 implementation
+  - [x] Standard text mode
+  - [x] Multicolor text mode
+  - [x] Sprite support
+    - only sprite-sprite collisions (sprite-data collisions in headless-chicken mode)
+    - collisions cannot be cleared through reads, only through writes
+  - No badline support
+- [x] Built-in Monitor
   - PC and EA breakpoints
   - Raster-IRQ breakpoints
   - Raster-beam visualization
@@ -23,13 +32,12 @@ Have a look at our [final presentation](https://docs.google.com/presentation/d/1
 ### What Works And What Doesn't
 
 - [x] Kernal Boot-up & BASIC prompt input
-- [x] Start and run BASIC programs in `./rc64/prg_tests` (you have to `make -C rc64/prg_tests` them)
-- [x] Raster IRQ demos in `./rc64/asm_tests` (you have to `make -C rc64/asm_tests` them)
-  - No badline support
-- [x] Boulder PRG (Don't forget to set `--joystick1={}`)
-- [ ] Ninja PRG
-  - no sprite support
-- [ ] Pacman PRG
+- [x] Start and run BASIC programs in `./prg_tests` (you have to `make -C prg_tests` them)
+- [x] Raster IRQ demos in `./asm_tests` (you have to `make -C asm_tests` them)
+- [x] Sprite demo `prg_tests/sprite.prg` (you have to `make -C prg_tests`)
+- [x] **Boulder PRG** with `--joystick1`
+- [x] **Pacman PRG** with `--joystick2`
+- [ ] Ninja PRG (no bitmap mode support)
 
 ## Build Instructions
 

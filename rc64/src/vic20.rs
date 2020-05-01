@@ -9,18 +9,21 @@ use crate::ram::RAM;
 use crate::rom::ROM;
 use crate::utils::R2C;
 use crate::vic20::registers::Registers;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::iter;
 
 use self::framebuffer::ARGB;
 pub use self::mem::BankingState;
+use bitvec::prelude::*;
 
+use mem::U14;
 use num_enum::TryFromPrimitive;
 
 /// https://www.c64-wiki.com/wiki/Color
-#[derive(Debug, Eq, PartialEq, TryFromPrimitive, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive, Copy, Clone, EnumString)]
 #[repr(u8)]
+#[strum(serialize_all = "snake_case")]
 pub enum Color {
     Black = 0,
     White = 1,
@@ -46,7 +49,7 @@ impl From<self::mem::U4> for Color {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Point(pub usize, pub usize);
 
 pub struct VIC20<T> {
@@ -59,6 +62,7 @@ pub struct VIC20<T> {
     raster_breakpoints: HashSet<usize>,
     raster_break_all: bool,
     highlight_raster_beam: bool,
+    highlight_x_grid: Option<Color>,
 }
 
 // 9.5cycles * 8px
@@ -71,7 +75,7 @@ pub const HBLANK_RIGHT_PX: isize = 3 * 8;
 pub const SCREEN_WIDTH: usize = (HBLANK_LEFT_PX + VISIBLE_HORIZONTAL_PX + HBLANK_RIGHT_PX) as usize;
 
 const MAX_X: isize = SCREEN_WIDTH as isize + X_START;
-const X_START: isize = -(HBLANK_LEFT_PX + 48 / 2);
+const X_START: isize = -(HBLANK_LEFT_PX + 56 / 2);
 
 pub const PIXELS_PER_CYCLE: usize = 8;
 
@@ -79,6 +83,8 @@ pub const VISIBLE_VERTICAL_PX: usize = 284;
 pub const VBLANK_TOP_PX: usize = 14;
 pub const VBLANK_BTM_PX: usize = 14;
 pub const SCREEN_HEIGHT: usize = VBLANK_TOP_PX + VISIBLE_VERTICAL_PX + VBLANK_BTM_PX;
+
+type Layer = u8;
 
 impl<T: AsRef<[u8]>> VIC20<T> {
     pub fn new(
@@ -96,6 +102,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             raster_breakpoints: HashSet::new(),
             raster_break_all: false,
             highlight_raster_beam: false,
+            highlight_x_grid: None,
         }
     }
 
@@ -141,16 +148,18 @@ impl<T: AsRef<[u8]>> VIC20<T> {
 
         assert!(!inside_content_zone || inside_border_zone);
 
-        if inside_content_zone {
-            // Coordinate transformation
-            let x = (self.x - content_start_x) as usize;
-            let y = self.y() - content_start_y;
+        let mut written_pixels: HashMap<Point, HashSet<Layer>> = HashMap::new();
 
+        if inside_content_zone {
             match (
                 self.regs.control_register_1.contains(ControlRegister1::BMM),
                 self.regs.control_register_1.contains(ControlRegister1::ECM),
             ) {
                 (false, false) => {
+                    // Coordinate transformation
+                    let x = (self.x - content_start_x) as usize;
+                    let y = self.y() - content_start_y;
+
                     let char_row = y / 8;
                     let char_col = x / 8;
 
@@ -165,7 +174,6 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                     let d = (ch as usize) << 3;
                     let rc = y & 0b111;
 
-                    use bitvec::prelude::*;
                     let bm: u8 = self.mem.read_data(cb + d + rc);
                     let bm = bm.bits::<Msb0>();
 
@@ -213,6 +221,83 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 }
                 _ => unimplemented!("Only support high-res/multicolor text mode for now"),
             }
+
+            if let Some(col) = self.highlight_x_grid {
+                self.draw_horizontal_slice(&[col]);
+            }
+
+            let vm = self.regs.memory_pointers.video_matrix_base();
+            for (sprite_number, sprite) in
+                self.regs.sprite_iter_ordered().enumerate().filter(|(_, sprite)| sprite.enabled)
+            {
+                // coordinate transformation
+                let x = self.x as usize;
+                let y = self.y;
+
+                assert!(!sprite.multicolor, "sprite multicolor mode not supported");
+                let x_expansion_factor = if sprite.x_expansion { 2 } else { 1 };
+                let width = 24 * x_expansion_factor;
+                let y_expansion_factor = if sprite.y_expansion { 2 } else { 1 };
+                let height = 21 * y_expansion_factor;
+
+                let in_rect =
+                    (x >= sprite.x && x < sprite.x + width) && (y >= sprite.y && y < sprite.y + height);
+                if in_rect {
+                    // p-access
+                    let addr = (vm & U14::try_from(0b1111_0000000_000u16).unwrap())
+                        | U14::try_from(0b0000_1111111_000u16).unwrap()
+                        | U14::try_from(sprite_number & 0b0000_0000000_111).unwrap();
+
+                    let sprite_block_ptr = self.mem.read_data(addr); // https://www.c64-wiki.com/wiki/Screen_RAM
+                                                                     // TODO shouldn't the above read only be allowed in banking state 0
+
+                    // s-access
+                    let sprite_bm_base = (sprite_block_ptr as usize) << 6;
+                    // the lower 6 bytes of the sprite_bm_ptr consist of
+                    // 3bytes per row if not expanded
+                    // 21 rows
+                    // => 63bytes (+ 1 byte )
+                    let sprite_x_bm_idx = ((x - sprite.x) / x_expansion_factor) / 8;
+                    let sprite_bm_ptr =
+                        sprite_bm_base + ((y - sprite.y) / y_expansion_factor) * 3 + sprite_x_bm_idx;
+                    let sprite_bm = self.mem.read_data(mem::U14::try_from(sprite_bm_ptr).unwrap());
+
+                    let mut sprite_bm_spreaded: u16 = 0;
+                    {
+                        if !sprite.x_expansion {
+                            sprite_bm_spreaded = ((sprite_bm as u16) << 8) | (sprite_bm as u16);
+                        } else {
+                            sprite_bm.bits::<Lsb0>().into_iter().enumerate().for_each(|(idx, value)| {
+                                sprite_bm_spreaded |= (*value as u16) << (2 * idx + 0);
+                                sprite_bm_spreaded |= (*value as u16) << (2 * idx + 1);
+                            });
+                        };
+                    };
+
+                    let off = {
+                        let tile_x_offset = (8 * x_expansion_factor as isize) * (sprite_x_bm_idx as isize);
+                        tile_x_offset - ((x as isize) - (sprite.x as isize))
+                    };
+
+                    self.draw_horizontal_opts(
+                        off,
+                        sprite_bm_spreaded.bits::<Msb0>().into_iter().take(8 * x_expansion_factor).map(
+                            |bit| {
+                                if sprite.multicolor {
+                                    unimplemented!();
+                                } else {
+                                    if *bit {
+                                        Some(sprite.color)
+                                    } else {
+                                        None
+                                    }
+                                }
+                            },
+                        ),
+                        Some(((sprite_number + 1) as u8, &mut written_pixels)),
+                    );
+                }
+            }
         } else if inside_border_zone {
             let c = Color::try_from(self.regs.border_color.bits()).unwrap();
             let colors = [c, c, c, c, c, c, c, c];
@@ -222,6 +307,27 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             const COLORS: [Color; 8] = [C, C, C, C, C, C, C, C];
             self.draw_horizontal_slice(&COLORS)
         }
+
+        // process collisions
+        for (_, layers) in written_pixels {
+            self.regs.sprite_sprite_collision.bits_mut::<Lsb0>().for_each(|idx, value| {
+                value
+                    || ((layers.len() >= 3 || (!layers.contains(&0) && layers.len() >= 2))
+                        && layers.contains(&((idx + 1) as u8)))
+            });
+            self.regs.sprite_data_collision.bits_mut::<Lsb0>().for_each(|idx, value| {
+                value || (layers.contains(&0) && layers.contains(&((idx + 1) as u8)))
+            });
+        }
+        let have_sprite_sprite_collision = self.regs.sprite_sprite_collision != 0
+            && self.regs.interrupt_enabled.contains(InterruptEnabled::EMMC);
+        let have_sprite_data_collision = self.regs.sprite_data_collision != 0
+            && self.regs.interrupt_enabled.contains(InterruptEnabled::EMBC);
+        if have_sprite_data_collision || have_sprite_sprite_collision {
+            dbg!((have_sprite_sprite_collision, have_sprite_data_collision));
+        }
+        self.regs.interrupt_register.set(InterruptRegister::IMMC, have_sprite_sprite_collision);
+        self.regs.interrupt_register.set(InterruptRegister::IMBC, have_sprite_data_collision);
 
         assert!(self.x != X_START || cycles % 63 == 0);
         assert!(
@@ -254,8 +360,8 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         }
 
         // deliver irq if appropriate
-        if self.regs.interrupt_enabled.contains(InterruptEnabled::ERST)
-            && self.regs.interrupt_register.contains(InterruptRegister::IRST)
+        if ((self.regs.interrupt_enabled.bits() & 0b1111) & (self.regs.interrupt_register.bits() & 0b1111))
+            != 0
         {
             Some(crate::interrupt::Interrupt)
         } else {
@@ -310,11 +416,26 @@ impl<T> VIC20<T> {
         self.draw_horizontal_slice(&COLORS)
     }
 
-    fn draw_horizontal<I: ExactSizeIterator<Item = Color>>(&mut self, cols: I) {
-        let starting_point = Point((self.x - X_START) as usize, self.y());
+    fn draw_horizontal_opts<I: ExactSizeIterator<Item = Option<Color>>>(
+        &self,
+        offset: isize,
+        cols: I,
+        mut modified_pixels: Option<(Layer, &mut HashMap<Point, HashSet<Layer>>)>,
+    ) {
+        let starting_point = Point(usize::try_from((self.x - X_START) + offset).unwrap(), self.y());
         iter::successors(Some(starting_point), |p| Some(Point(p.0 + 1, p.1)))
             .zip(cols)
-            .for_each(|(point, col)| self.screen.set_px(point, ARGB::from(col)))
+            .filter_map(|(point, opt)| opt.map(|col| (point, col)))
+            .for_each(move |(point, col)| {
+                self.screen.set_px(point, ARGB::from(col));
+                if let Some((layer, modified_pixels)) = modified_pixels.as_mut() {
+                    modified_pixels.entry(point).or_default().insert(*layer);
+                }
+            })
+    }
+
+    fn draw_horizontal<I: ExactSizeIterator<Item = Color>>(&mut self, cols: I) {
+        self.draw_horizontal_opts(0, cols.map(Some), None)
     }
 
     #[inline(always)]
@@ -332,6 +453,7 @@ pub trait RasterBreakpointBackend {
     fn remove_raster_breakpoint(&mut self, line: usize);
     fn break_on_every_raster_line(&mut self, brk: bool);
     fn highlight_raster_beam(&mut self, beam: bool);
+    fn highlight_x_grid(&mut self, highlight: Option<Color>);
 }
 
 impl<T> RasterBreakpointBackend for VIC20<T> {
@@ -356,5 +478,9 @@ impl<T> RasterBreakpointBackend for VIC20<T> {
         if beam {
             self.highlight_next_beam_position();
         }
+    }
+
+    fn highlight_x_grid(&mut self, highlight: Option<Color>) {
+        self.highlight_x_grid = highlight;
     }
 }

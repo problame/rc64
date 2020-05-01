@@ -52,7 +52,14 @@ impl Minifb {
 
 impl PeripheralDevicesBackend for Minifb {
     fn get_current_keyboard_matrix(&self) -> KeyboardMatrix {
-        self.pressed_keys.lock().iter().cloned().map(C64Key::try_from).filter_map(Result::ok).into()
+        self.pressed_keys
+            .lock()
+            .iter()
+            .cloned()
+            .filter(|k| !(self.joystick_mode.0.grabs_key(*k) || self.joystick_mode.1.grabs_key(*k)))
+            .map(C64Key::try_from)
+            .filter_map(Result::ok)
+            .into()
     }
 
     fn get_current_joystick1_state(&self) -> JoystickSwitch {
@@ -194,6 +201,10 @@ impl TryFrom<Key> for C64Key {
 }
 
 impl JoystickMode {
+    fn grabs_key(&self, key: Key) -> bool {
+        self.event_from(key).is_ok()
+    }
+
     fn event_from(&self, key: Key) -> Result<JoystickSwitch, UnmappedKey> {
         use Key::*;
         match self {
@@ -214,6 +225,16 @@ impl JoystickMode {
                 NumPad5 => Ok(JoystickSwitch::DOWN),
                 NumPad6 => Ok(JoystickSwitch::RIGHT),
                 NumPadEnter | NumPad0 => Ok(JoystickSwitch::FIRE),
+                Count => unreachable!(),
+                _ => Err(UnmappedKey),
+            },
+
+            JoystickMode::Arrows => match key {
+                Down => Ok(JoystickSwitch::DOWN),
+                Left => Ok(JoystickSwitch::LEFT),
+                Right => Ok(JoystickSwitch::RIGHT),
+                Up => Ok(JoystickSwitch::UP),
+                Space => Ok(JoystickSwitch::FIRE),
                 Count => unreachable!(),
                 _ => Err(UnmappedKey),
             },

@@ -163,11 +163,62 @@ impl Regs {
         self.set_nz_flags(v);
     }
 
+    fn add_to_a_with_carry_and_set_carry(&mut self, v: u8) {
+        if !self.p.contains(Flags::DEC) {
+            self.add_to_a_with_carry_and_set_carry_8bit(v)
+        } else {
+            self.add_to_a_with_carry_and_set_carry_decimal(v);
+        }
+    }
+
+    fn bcd_comps(v: u8) -> (u8, u8) {
+        let msb = v >> 4;
+        let lsb = v & 0b1111;
+        (msb, lsb)
+    }
+
+    #[inline]
+    fn add_to_a_with_carry_and_set_carry_decimal(&mut self, v: u8) {
+        lazy_static::lazy_static! {
+            static ref WARNING_PRINTED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+        }
+        if !WARNING_PRINTED.compare_and_swap(false, true, std::sync::atomic::Ordering::SeqCst) {
+            eprintln!("WARNING: program uses partially-implemented BCD mode!");
+        }
+
+        let (v_msb, v_lsb) = Self::bcd_comps(v);
+        let (a_msb, a_lsb) = Self::bcd_comps(self.a);
+        let c = self.p.contains(Flags::CARRY) as u8;
+
+        fn assert_is_bcd_num(v: u8) {
+            assert!(v <= 9, "v is not a bcd digit: {:?}", v);
+        }
+        assert_is_bcd_num(v_lsb);
+        assert_is_bcd_num(a_lsb);
+        assert_is_bcd_num(v_msb);
+        assert_is_bcd_num(a_msb);
+
+        let mut lsb = a_lsb + c + v_lsb;
+        let mut lsb_ovfl = false;
+        if lsb >= 10 {
+            lsb_ovfl = true;
+            lsb = lsb - 10;
+        }
+
+        let mut msb = a_msb + (lsb_ovfl as u8) + v_msb;
+        let mut msb_ovfl = false;
+        if msb >= 10 {
+            msb_ovfl = true;
+            msb = msb - 10;
+        }
+
+        self.p.set(Flags::CARRY, msb_ovfl);
+        self.a = (msb << 4) | lsb;
+    }
+
     // http://www.righto.com/2012/12/the-6502-overflow-flag-explained.html
     #[inline]
-    fn add_to_a_with_carry_and_set_carry(&mut self, v: u8) {
-        assert!(!self.p.contains(Flags::DEC));
-
+    fn add_to_a_with_carry_and_set_carry_8bit(&mut self, v: u8) {
         // do the addition in u16 space
         let a = self.a as u16;
         let v = v as u16;

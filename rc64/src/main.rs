@@ -8,10 +8,15 @@ extern crate bitflags;
 extern crate derive_more;
 
 #[macro_use]
-mod r2c;
+pub mod headless_chicken;
+pub use headless_chicken as hc;
 
 #[macro_use]
-mod utils;
+mod r2c;
+
+mod utils {
+    pub use super::r2c::R2C;
+}
 
 mod cia;
 mod color_ram;
@@ -72,6 +77,59 @@ fn parse_hex(src: &str) -> Result<u16, ParseIntError> {
     u16::from_str_radix(src, 16)
 }
 
+#[derive(Clone, Debug)]
+enum AutostartFilePath {
+    Picker,
+    Local(PathBuf),
+    Builtin(String),
+}
+
+impl<'a> TryFrom<&'a str> for AutostartFilePath {
+    type Error = <PathBuf as TryFrom<&'a str>>::Error;
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        if s.starts_with("builtin://") {
+            if s == "builtin://LIST" {
+                println!("built-in autostart paths:\n\n{}\n\n", bundled_prg_autostart_paths().join("\n"));
+                panic!("panic after listing builtin autostart paths")
+            } else {
+                Ok(AutostartFilePath::Builtin(s.trim_start_matches("builtin://").to_owned()))
+            }
+        } else if s == "FILEPICKER" {
+            Ok(AutostartFilePath::Picker)
+        } else {
+            Ok(AutostartFilePath::Local(PathBuf::try_from(s)?))
+        }
+    }
+}
+
+impl FromStr for AutostartFilePath {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        AutostartFilePath::try_from(s).map_err(|e| format!("{}", e))
+    }
+}
+
+impl AutostartFilePath {
+    fn read_full(&self) -> Result<Vec<u8>, String> {
+        match self {
+            AutostartFilePath::Picker => {
+                use dialog::DialogBox;
+                let choice = dialog::FileSelection::new("Please select a PRG file")
+                    .title("rc64 - PRG file selection")
+                    .show()
+                    .expect("Could not display dialog box")
+                    .expect("User did not select a file");
+                std::fs::read(choice).map_err(|e| format!("{}", e))
+            }
+            AutostartFilePath::Local(p) => std::fs::read(p).map_err(|e| format!("{}", e)),
+            AutostartFilePath::Builtin(name) => BUNDLED_PRGS
+                .get_file(name)
+                .map(|f| f.contents().to_owned())
+                .ok_or(format!("given path is not bundled in binary")),
+        }
+    }
+}
+
 #[derive(Debug, StructOpt)]
 struct Args {
     #[structopt(long, help = "use custom kernal image")]
@@ -96,8 +154,11 @@ struct Args {
     #[structopt(long = "no-gui")]
     no_gui: bool,
 
-    #[structopt(help = "autostart file")]
-    autostart_path: Option<PathBuf>,
+    #[structopt(
+        help = "Path to PRG or 0x400 file / builtin://BUILTIN-PRG-NAME / FILEPICKER to be autostarted. FILEPICKER shows a platform-native file-picker. use builtin://LIST to list all built-in PRGs",
+        parse(try_from_str)
+    )]
+    autostart_path: Option<AutostartFilePath>,
 
     #[structopt(long = "autostart-file-type", help = "prg,bin-0x0400", default_value = "prg")]
     autostart_file_type: AutloadFileType,
@@ -111,17 +172,26 @@ struct Args {
     #[structopt(long, help = "run for specified number of clock cycles, exit when reached")]
     exit_after_cycles: Option<u64>,
 
-    #[structopt(long, help = "joystick 1 mode. One of `none`, `wasd`, `numpad`", default_value = "none")]
+    #[structopt(
+        long,
+        help = "joystick 1 mode. One of `none`, `wasd`, `numpad`, `arrows`",
+        default_value = "none"
+    )]
     joystick1: JoystickMode,
 
-    #[structopt(long, help = "joystick 2 mode ", default_value = "numpad")]
+    #[structopt(long, help = "joystick 2 mode (same args are for joystick 1) ", default_value = "numpad")]
     joystick2: JoystickMode,
+
+    // in what domains headless chicken mode should be activated
+    #[structopt(long, use_delimiter(true), default_value = "cia,main,vic-sprite-data-collision")]
+    headless_chicken: Vec<crate::hc::Domain>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub enum JoystickMode {
     None,
     Wasd,
+    Arrows,
     NumPad,
 }
 
@@ -136,15 +206,91 @@ impl FromStr for JoystickMode {
             "none" => Ok(JoystickMode::None),
             "wasd" => Ok(JoystickMode::Wasd),
             "numpad" => Ok(JoystickMode::NumPad),
+            "arrows" => Ok(JoystickMode::Arrows),
             _ => Err(InvalidJoystickModeError(s)),
         }
     }
 }
 
+const BUNDLED_PRGS: include_dir::Dir = include_dir::include_dir!("../bundled_prgs");
+
+fn bundled_prg_autostart_paths() -> Vec<String> {
+    BUNDLED_PRGS
+        .find("*")
+        .expect("list built-in PRGs")
+        .map(|f| format!("{}", f.path().to_str().expect("prg path as string")))
+        .filter(|f| f.len() > 0 && f != ".placeholder")
+        .map(|f| format!("builtin://{}", f))
+        .collect()
+}
+
 fn main() {
     let args = Args::from_args();
+    if args.autostart_path.is_none() && cfg!(windows) {
+        // Startup screen that prompts for user input
+        loop {
+            use dialog::DialogBox;
 
-    let kernal = args.kernal.map_or_else(
+            let mut help_text = Vec::new();
+            Args::clap().write_help(&mut help_text).unwrap();
+            let help_text = String::from_utf8(help_text).unwrap();
+
+            let prompt_text = format!(
+                r#"
+You did not use the command line to pass an autostart path,
+presumably because you are on Windows and just clicked to run a pre-compiled .exe.
+
+This prompt allows you to enter command-line arguments into the input box below.
+rc64 will re-evaluate the entire command line and to whatever you told it to do.
+
+This binary contains the following built-in PRGs that can be passed as autostart paths:
+{}
+
+Options to rc64 are:
+{}
+
+        "#,
+                bundled_prg_autostart_paths()
+                    .into_iter()
+                    .map(|f| format!("  - {}", f))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+                help_text,
+            );
+
+            let name = dialog::Input::new(prompt_text)
+                .title("rc64 - C64 Emulator - Startup Prompt")
+                .show()
+                .expect("Could not display dialog box");
+            match name {
+                Some(input) => {
+                    let input = input.split_whitespace().into_iter().map(|s| s.to_owned());
+                    println!("You entered arguments: {:?}", input);
+
+                    let mut args: Vec<String> = std::env::args().collect();
+                    args.extend(input);
+                    let args = Args::from_iter(args);
+
+                    do_main_noninteractive(&args, None);
+                }
+                None => {
+                    do_main_noninteractive(&args, None);
+                }
+            };
+        }
+    } else {
+        do_main_noninteractive(&args, None)
+    }
+}
+
+fn do_main_noninteractive(args: &Args, prepicked_file_path: Option<AutostartFilePath>) {
+    let mut hc: u64 = 0;
+    for f in &args.headless_chicken {
+        hc |= *f as u64;
+    }
+    crate::hc::ENABLED.store(hc, std::sync::atomic::Ordering::SeqCst);
+
+    let kernal = args.kernal.as_ref().map_or_else(
         || r2c_new!(rom::stock::KERNAL) as R2C<dyn MemoryArea>,
         |p| {
             let kernal_img = std::fs::read(p).expect("read custom kernal image failed");
@@ -222,10 +368,10 @@ fn main() {
     ));
 
     let mut autoload_state: Option<Box<dyn autoload::Autloader>> =
-        match (args.autostart_path, args.autostart_file_type) {
+        match (prepicked_file_path.or(args.autostart_path.clone()), &args.autostart_file_type) {
             (None, _) => None,
             (Some(path), x) => {
-                let bytes = std::fs::read(path).expect("read PRG");
+                let bytes = path.read_full().expect("load PRG");
                 match x {
                     AutloadFileType::PRG => {
                         let prg = autoload::prg::PRG::try_from(bytes).expect("parse PRG");
