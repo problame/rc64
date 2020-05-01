@@ -172,10 +172,14 @@ struct Args {
     #[structopt(long, help = "run for specified number of clock cycles, exit when reached")]
     exit_after_cycles: Option<u64>,
 
-    #[structopt(long, help = "joystick 1 mode. One of `none`, `wasd`, `numpad`", default_value = "none")]
+    #[structopt(
+        long,
+        help = "joystick 1 mode. One of `none`, `wasd`, `numpad`, `arrows`",
+        default_value = "none"
+    )]
     joystick1: JoystickMode,
 
-    #[structopt(long, help = "joystick 2 mode ", default_value = "numpad")]
+    #[structopt(long, help = "joystick 2 mode (same args are for joystick 1) ", default_value = "numpad")]
     joystick2: JoystickMode,
 
     // in what domains headless chicken mode should be activated
@@ -187,6 +191,7 @@ struct Args {
 pub enum JoystickMode {
     None,
     Wasd,
+    Arrows,
     NumPad,
 }
 
@@ -201,6 +206,7 @@ impl FromStr for JoystickMode {
             "none" => Ok(JoystickMode::None),
             "wasd" => Ok(JoystickMode::Wasd),
             "numpad" => Ok(JoystickMode::NumPad),
+            "arrows" => Ok(JoystickMode::Arrows),
             _ => Err(InvalidJoystickModeError(s)),
         }
     }
