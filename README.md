@@ -11,6 +11,7 @@ Have a look at our [final presentation](https://docs.google.com/presentation/d/1
 - [x] VIC20 implementation
   - [x] Standard text mode
   - [x] Multicolor text mode
+  - [x] Standart & Multicolor Bitmap mode
   - [x] Sprite support
     - only sprite-sprite collisions (sprite-data collisions in headless-chicken mode)
     - collisions cannot be cleared through reads, only through writes
@@ -37,7 +38,8 @@ Have a look at our [final presentation](https://docs.google.com/presentation/d/1
 - [x] Sprite demo `prg_tests/sprite.prg` (you have to `make -C prg_tests`)
 - [x] **Boulder PRG** with `--joystick1`
 - [x] **Pacman PRG** with `--joystick2`
-- [ ] Ninja PRG (no bitmap mode support)
+- [-] Ninja PRG (partially)
+  - Only welcome screen works, not actual game
 
 ## Build Instructions
 

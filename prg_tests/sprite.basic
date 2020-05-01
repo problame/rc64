@@ -31,7 +31,7 @@
 100 poke v+0,x: poke v+1,y
 104 rem enable sprite 0
 105 poke v+21,1
-110 y=y+1: x=x+1
+110 rem y=y+1: x=x+1
 120 if y = 150 then goto 82
 140 goto 100
 

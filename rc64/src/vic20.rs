@@ -17,7 +17,7 @@ use self::framebuffer::ARGB;
 pub use self::mem::BankingState;
 use bitvec::prelude::*;
 
-use mem::U14;
+use mem::{U14, U4};
 use num_enum::TryFromPrimitive;
 
 /// https://www.c64-wiki.com/wiki/Color
@@ -151,75 +151,79 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         let mut written_pixels: HashMap<Point, HashSet<Layer>> = HashMap::new();
 
         if inside_content_zone {
-            match (
-                self.regs.control_register_1.contains(ControlRegister1::BMM),
-                self.regs.control_register_1.contains(ControlRegister1::ECM),
-            ) {
-                (false, false) => {
-                    // Coordinate transformation
-                    let x = (self.x - content_start_x) as usize;
-                    let y = self.y() - content_start_y;
+            // Coordinate transformation
+            let x = (self.x - content_start_x) as usize;
+            let y = self.y() - content_start_y;
 
-                    let char_row = y / 8;
-                    let char_col = x / 8;
+            let char_row = y / 8;
+            let char_col = x / 8;
 
-                    // c-access
-                    let vm = self.regs.memory_pointers.video_matrix_base();
-                    let vc = char_row * 40 + char_col;
-                    let (c_access_msbs, ch) = self.mem.read(vm + vc).into();
-                    let c_access_msbs = u8::from(c_access_msbs);
+            // c-access
+            let vm = self.regs.memory_pointers.video_matrix_base();
+            let vc = char_row * 40 + char_col;
+            let (c_access_msbs, ch) = self.mem.read(vm + vc).into();
+            let c_access_msbs = u8::from(c_access_msbs);
 
-                    // g-access
-                    let cb = self.regs.memory_pointers.character_generator_base();
-                    let d = (ch as usize) << 3;
-                    let rc = y & 0b111;
+            assert!(!self.regs.control_register_1.contains(ControlRegister1::ECM), "ECM is unsupported");
 
-                    let bm: u8 = self.mem.read_data(cb + d + rc);
-                    let bm = bm.bits::<Msb0>();
+            let rc = y & 0b111;
+            let cb = self.regs.memory_pointers.character_generator_base();
 
-                    let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
+            let fg = Color::try_from(c_access_msbs).unwrap();
+            let bg = Color::try_from(self.regs.background_color[0] % 16).unwrap(); // text mode bg color
 
-                    let (mc_flag, mcm_11_pixel_color) =
-                        ((c_access_msbs & 0b1000) != 0, c_access_msbs & 0b0111);
+            if self.regs.control_register_1.contains(ControlRegister1::BMM) {
+                //g-access
+                let addr = cb & U14::try_from(0b1_0000000000_000u16).unwrap()
+                    | U14::try_from((vc << 3) & 0b0_1111111111_000).unwrap()
+                    | U14::try_from(rc).unwrap();
 
-                    if mc_flag && self.regs.control_register_2.contains(ControlRegister2::MCM) {
-                        let pairs = {
-                            let mut bm = bm.iter();
-                            let pairs = [
-                                (bm.next().unwrap(), bm.next().unwrap()),
-                                (bm.next().unwrap(), bm.next().unwrap()),
-                                (bm.next().unwrap(), bm.next().unwrap()),
-                                (bm.next().unwrap(), bm.next().unwrap()),
-                            ];
-                            assert!(bm.next().is_none());
-                            pairs
-                        };
+                let bm = self.mem.read_data(addr);
+                let bm = bm.bits::<Msb0>();
 
-                        let fg = Color::try_from(mcm_11_pixel_color).unwrap();
-                        let bg1 = Color::try_from(self.regs.background_color[1] % 16).unwrap();
-                        let bg2 = Color::try_from(self.regs.background_color[2] % 16).unwrap();
+                let fg2 = Color::from(U4::from_u8_truncate(ch >> 4));
+                let bg2 = Color::from(U4::from_u8_truncate(ch));
 
-                        let mut colors = [bg, bg, bg, bg, bg, bg, bg, bg];
-                        for (i, pair) in pairs.iter().enumerate() {
-                            let color = match pair {
-                                (false, false) => bg,
-                                (false, true) => bg1,
-                                (true, false) => bg2,
-                                (true, true) => fg,
-                            };
-                            colors[2 * i] = color;
-                            colors[2 * i + 1] = color;
-                        }
-                        self.draw_horizontal_slice(&colors);
-                    } else {
-                        let fg = Color::try_from(c_access_msbs).unwrap();
-                        self.draw_horizontal(bm.iter().map(|is_fg| match is_fg {
-                            true => fg,
-                            false => bg,
-                        }))
-                    }
+                if self.regs.control_register_2.contains(ControlRegister2::MCM) {
+                    self.draw_horizontal_pairs(bm.into_iter().map(|b| *b), |pair| match pair {
+                        (false, false) => bg,
+                        (false, true) => fg2,
+                        (true, false) => bg2,
+                        (true, true) => fg,
+                    })
+                } else {
+                    self.draw_horizontal(bm.iter().map(|is_fg| match is_fg {
+                        true => fg2,
+                        false => bg2,
+                    }));
                 }
-                _ => unimplemented!("Only support high-res/multicolor text mode for now"),
+            } else {
+                // g-access
+                let d = (ch as usize) << 3;
+
+                let bm: u8 = self.mem.read_data(cb + d + rc);
+                let bm = bm.bits::<Msb0>();
+
+                let (mc_flag, mcm_11_pixel_color) = ((c_access_msbs & 0b1000) != 0, c_access_msbs & 0b0111);
+
+                if mc_flag && self.regs.control_register_2.contains(ControlRegister2::MCM) {
+                    let fg = Color::try_from(mcm_11_pixel_color).unwrap();
+                    let bg1 = Color::try_from(self.regs.background_color[1] % 16).unwrap();
+                    let bg2 = Color::try_from(self.regs.background_color[2] % 16).unwrap();
+
+                    self.draw_horizontal_pairs(bm.iter().map(|b| *b), |pair| match pair {
+                        (false, false) => bg,
+                        (false, true) => bg1,
+                        (true, false) => bg2,
+                        (true, true) => fg,
+                    });
+                } else {
+                    let fg = Color::try_from(c_access_msbs).unwrap();
+                    self.draw_horizontal(bm.iter().map(|is_fg| match is_fg {
+                        true => fg,
+                        false => bg,
+                    }))
+                }
             }
 
             if let Some(col) = self.highlight_x_grid {
@@ -416,7 +420,7 @@ impl<T> VIC20<T> {
         self.draw_horizontal_slice(&COLORS)
     }
 
-    fn draw_horizontal_opts<I: ExactSizeIterator<Item = Option<Color>>>(
+    fn draw_horizontal_opts<I: Iterator<Item = Option<Color>>>(
         &self,
         offset: isize,
         cols: I,
@@ -434,7 +438,7 @@ impl<T> VIC20<T> {
             })
     }
 
-    fn draw_horizontal<I: ExactSizeIterator<Item = Color>>(&mut self, cols: I) {
+    fn draw_horizontal<I: Iterator<Item = Color>>(&mut self, cols: I) {
         self.draw_horizontal_opts(0, cols.map(Some), None)
     }
 
@@ -444,6 +448,25 @@ impl<T> VIC20<T> {
         for (i, c) in colors.iter().cloned().enumerate() {
             self.screen.set_px(Point(start.0 + i, start.1), ARGB::from(c))
         }
+    }
+
+    fn draw_horizontal_pairs<'a, I, F>(&mut self, mut bm: I, f: F)
+    where
+        I: Iterator<Item = bool>,
+        F: FnMut(&(bool, bool)) -> Color,
+    {
+        let pairs = {
+            let pairs = [
+                (bm.next().unwrap(), bm.next().unwrap()),
+                (bm.next().unwrap(), bm.next().unwrap()),
+                (bm.next().unwrap(), bm.next().unwrap()),
+                (bm.next().unwrap(), bm.next().unwrap()),
+            ];
+            assert!(bm.next().is_none());
+            pairs
+        };
+
+        self.draw_horizontal(pairs.iter().map(f).flat_map(|col| vec![col, col]))
     }
 }
 
