@@ -49,9 +49,7 @@ impl MemoryView {
     }
 
     pub fn write(&mut self, addr: u16, val: u8) {
-        if addr == 0 {
-            assert_eq!(val & 0b111, 0b111);
-        } else if addr == 1 {
+        if addr == 1 {
             self.banking_state.update(CpuControlLines::from_bits_truncate(val));
         }
 
