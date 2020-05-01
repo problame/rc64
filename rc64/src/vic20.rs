@@ -75,7 +75,7 @@ pub const HBLANK_RIGHT_PX: isize = 3 * 8;
 pub const SCREEN_WIDTH: usize = (HBLANK_LEFT_PX + VISIBLE_HORIZONTAL_PX + HBLANK_RIGHT_PX) as usize;
 
 const MAX_X: isize = SCREEN_WIDTH as isize + X_START;
-const X_START: isize = -(HBLANK_LEFT_PX + 48 / 2);
+const X_START: isize = -(HBLANK_LEFT_PX + 56 / 2);
 
 pub const PIXELS_PER_CYCLE: usize = 8;
 
