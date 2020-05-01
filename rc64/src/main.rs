@@ -77,6 +77,42 @@ fn parse_hex(src: &str) -> Result<u16, ParseIntError> {
     u16::from_str_radix(src, 16)
 }
 
+#[derive(Debug)]
+enum AutostartFilePath {
+    Local(PathBuf),
+    Builtin(String),
+}
+
+impl<'a> TryFrom<&'a str> for AutostartFilePath {
+    type Error = <PathBuf as TryFrom<&'a str>>::Error;
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        if s.starts_with("builtin://") {
+            Ok(AutostartFilePath::Builtin(s.trim_start_matches("builtin://").to_owned()))
+        } else {
+            Ok(AutostartFilePath::Local(PathBuf::try_from(s)?))
+        }
+    }
+}
+
+impl FromStr for AutostartFilePath {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        AutostartFilePath::try_from(s).map_err(|e| format!("{}", e))
+    }
+}
+
+impl AutostartFilePath {
+    fn read_full(&self) -> Result<Vec<u8>, String> {
+        match self {
+            AutostartFilePath::Local(p) => std::fs::read(p).map_err(|e| format!("{}", e)),
+            AutostartFilePath::Builtin(name) => BUNDLED_PRGS
+                .get_file(name)
+                .map(|f| f.contents().to_owned())
+                .ok_or(format!("given path is not bundled in binary")),
+        }
+    }
+}
+
 #[derive(Debug, StructOpt)]
 struct Args {
     #[structopt(long, help = "use custom kernal image")]
@@ -101,8 +137,8 @@ struct Args {
     #[structopt(long = "no-gui")]
     no_gui: bool,
 
-    #[structopt(help = "autostart file")]
-    autostart_path: Option<PathBuf>,
+    #[structopt(help = "autostart file", parse(try_from_str))]
+    autostart_path: Option<AutostartFilePath>,
 
     #[structopt(long = "autostart-file-type", help = "prg,bin-0x0400", default_value = "prg")]
     autostart_file_type: AutloadFileType,
@@ -149,6 +185,8 @@ impl FromStr for JoystickMode {
         }
     }
 }
+
+const BUNDLED_PRGS: include_dir::Dir = include_dir::include_dir!("../bundled_prgs");
 
 fn main() {
     let args = Args::from_args();
@@ -240,7 +278,7 @@ fn main() {
         match (args.autostart_path, args.autostart_file_type) {
             (None, _) => None,
             (Some(path), x) => {
-                let bytes = std::fs::read(path).expect("read PRG");
+                let bytes = path.read_full().expect("load PRG");
                 match x {
                     AutloadFileType::PRG => {
                         let prg = autoload::prg::PRG::try_from(bytes).expect("parse PRG");

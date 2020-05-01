@@ -8,14 +8,6 @@ edition = "2018"
 
 default-run = "rc64"
 
-[features]
-default = [ "headless-chicken--cia", "headless-chicken--main", "headless-chicken--vic--sprite-data-collision" ]
-headless-chicken = []
-headless-chicken--vic--sprite-data-collision = []
-headless-chicken--cia = []
-headless-chicken--main = []
-
-
 [[bin]]
 name = "rc64"
 path = "src/main.rs"
@@ -40,3 +32,4 @@ spin_sleep = "*"
 structopt = "0.3"
 strum = "0.16"
 strum_macros = "0.16"
+include_dir = "0.5"
