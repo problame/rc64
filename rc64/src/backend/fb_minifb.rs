@@ -28,7 +28,7 @@ impl Minifb {
 
                 loop {
                     std::thread::sleep(std::time::Duration::from_micros(16666));
-                    fb.update_with_buffer(fb_buf.as_u32_slice()).unwrap();
+                    fb.update_with_buffer(fb_buf.as_u32_slice(), fb_buf.width(), fb_buf.height()).unwrap();
 
                     let mut pressed_keys = pressed_keys.lock();
                     *pressed_keys = fb.get_keys().unwrap_or_default();

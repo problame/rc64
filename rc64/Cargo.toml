@@ -21,7 +21,7 @@ derive_more = "0.99"
 enum-map = "0.6"
 lazy_static = "1.4"
 maplit = "1.0"
-minifb = "0.13"
+minifb = "0.16"
 num_enum = "0.4.2"
 rc64-macros = { path = "../macros" }
 regex = "~1"
