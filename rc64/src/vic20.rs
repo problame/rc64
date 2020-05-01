@@ -227,10 +227,10 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 self.regs.sprite_iter_ordered().enumerate().filter(|(_, sprite)| sprite.enabled)
             {
                 assert!(!sprite.multicolor, "sprite multicolor mode not supported");
-                assert!(!sprite.x_expansion && !sprite.y_expansion, "{:?}", (sprite.x_expansion, sprite.y_expansion));
-                let width = if sprite.x_expansion { 24 * 2 } else { 24 };
-
-                let height = if sprite.y_expansion { 21 * 2 } else { 21 };
+                let x_expansion_factor = if sprite.x_expansion { 2 } else { 1 };
+                let width = 24 * x_expansion_factor;
+                let y_expansion_factor = if sprite.y_expansion { 2 } else { 1 };
+                let height = 21 * y_expansion_factor;
 
                 let in_rect =
                     (x >= sprite.x && x < sprite.x + width) && (y >= sprite.y && y < sprite.y + height);
@@ -249,25 +249,43 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                     // 3bytes per row if not expanded
                     // 21 rows
                     // => 63bytes (+ 1 byte )
-                    let sprite_x_bm_idx = (x - sprite.x) / 8;
-                    let sprite_bm_ptr = sprite_bm_base + (y - sprite.y) * 3 + sprite_x_bm_idx;
+                    let sprite_x_bm_idx = ((x - sprite.x) / x_expansion_factor) / 8;
+                    let sprite_bm_ptr =
+                        sprite_bm_base + ((y - sprite.y) / y_expansion_factor) * 3 + sprite_x_bm_idx;
                     let sprite_bm = self.mem.read_data(mem::U14::try_from(sprite_bm_ptr).unwrap());
-                    let sprite_bm = sprite_bm.bits::<Msb0>();
 
-                    let off = 8 * sprite_x_bm_idx as isize + (sprite.x as isize) - (x as isize);
+                    let mut sprite_bm_spreaded: u16 = 0;
+                    {
+                        if !sprite.x_expansion {
+                            sprite_bm_spreaded = ((sprite_bm as u16) << 8) | (sprite_bm as u16);
+                        } else {
+                            sprite_bm.bits::<Lsb0>().into_iter().enumerate().for_each(|(idx, value)| {
+                                sprite_bm_spreaded |= (*value as u16) << (2 * idx + 0);
+                                sprite_bm_spreaded |= (*value as u16) << (2 * idx + 1);
+                            });
+                        };
+                    };
+
+                    let off = {
+                        let tile_x_offset = (8 * x_expansion_factor as isize) * (sprite_x_bm_idx as isize);
+                        tile_x_offset - ((x as isize) - (sprite.x as isize))
+                    };
+
                     self.draw_horizontal_opts(
                         off,
-                        sprite_bm.into_iter().take(8).map(|bit| {
-                            if sprite.multicolor {
-                                unimplemented!();
-                            } else {
-                                if *bit {
-                                    Some(sprite.color)
+                        sprite_bm_spreaded.bits::<Msb0>().into_iter().take(8 * x_expansion_factor).map(
+                            |bit| {
+                                if sprite.multicolor {
+                                    unimplemented!();
                                 } else {
-                                    None
+                                    if *bit {
+                                        Some(sprite.color)
+                                    } else {
+                                        None
+                                    }
                                 }
-                            }
-                        }),
+                            },
+                        ),
                     );
                 }
             }

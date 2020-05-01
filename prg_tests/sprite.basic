@@ -18,20 +18,22 @@
 74 rem color sprite 0
 75 poke v+39,7
 
-79 rem enable x and y expansion of sprite 0
-80 rem poke v+23,1: poke v+29,1
 
-88 y=50: x=24
+80 iter=1
+82 rem try all configurations of x and y expansion every 4 rounds, with different sprite colors
+83 if iter = 1 then poke v+23,0: poke v+29,0: poke v+39,2: iter=2: goto 90
+84 if iter = 2 then poke v+23,1: poke v+29,1: poke v+39,3: iter=3: goto 90
+85 if iter = 3 then poke v+23,0: poke v+29,1: poke v+39,4: iter=4: goto 90
+86 if iter = 4 then poke v+23,1: poke v+29,0: poke v+39,5: iter=1: goto 90
 
-89 rem set x and y coordinate of sprite 0
-90 poke v+0,x: poke v+1,y
-
-94 rem enable sprite 0
-95 poke v+21,1
-
-100 y=y+1: x=x+1
-110 if y = 255 then y = 1: x=1
-130 goto 90
+90 rem move left top to right bottom diagonale
+99 y=50: x=24
+100 poke v+0,x: poke v+1,y
+104 rem enable sprite 0
+105 poke v+21,1
+110 y=y+1: x=x+1
+120 if y = 150 then goto 82
+140 goto 100
 
 10665 rem sprite data
 10670 data 12,0,192,12,0,192
