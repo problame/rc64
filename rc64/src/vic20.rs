@@ -21,8 +21,9 @@ use mem::U14;
 use num_enum::TryFromPrimitive;
 
 /// https://www.c64-wiki.com/wiki/Color
-#[derive(Debug, Eq, PartialEq, TryFromPrimitive, Copy, Clone)]
+#[derive(Debug, Eq, PartialEq, TryFromPrimitive, Copy, Clone, EnumString)]
 #[repr(u8)]
+#[strum(serialize_all = "snake_case")]
 pub enum Color {
     Black = 0,
     White = 1,
@@ -61,6 +62,7 @@ pub struct VIC20<T> {
     raster_breakpoints: HashSet<usize>,
     raster_break_all: bool,
     highlight_raster_beam: bool,
+    highlight_x_grid: Option<Color>,
 }
 
 // 9.5cycles * 8px
@@ -98,6 +100,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             raster_breakpoints: HashSet::new(),
             raster_break_all: false,
             highlight_raster_beam: false,
+            highlight_x_grid: None,
         }
     }
 
@@ -215,11 +218,16 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                 _ => unimplemented!("Only support high-res/multicolor text mode for now"),
             }
 
+            if let Some(col) = self.highlight_x_grid {
+                self.draw_horizontal_slice(&[col]);
+            }
+
             let vm = self.regs.memory_pointers.video_matrix_base();
             for (sprite_number, sprite) in
                 self.regs.sprite_iter_ordered().enumerate().filter(|(_, sprite)| sprite.enabled)
             {
                 assert!(!sprite.multicolor, "sprite multicolor mode not supported");
+                assert!(!sprite.x_expansion && !sprite.y_expansion, "{:?}", (sprite.x_expansion, sprite.y_expansion));
                 let width = if sprite.x_expansion { 24 * 2 } else { 24 };
 
                 let height = if sprite.y_expansion { 21 * 2 } else { 21 };
@@ -241,14 +249,15 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                     // 3bytes per row if not expanded
                     // 21 rows
                     // => 63bytes (+ 1 byte )
-                    let sprite_bm_ptr = sprite_bm_base + (y - sprite.y) * 3 + (x - sprite.x) / 8;
+                    let sprite_x_bm_idx = (x - sprite.x) / 8;
+                    let sprite_bm_ptr = sprite_bm_base + (y - sprite.y) * 3 + sprite_x_bm_idx;
                     let sprite_bm = self.mem.read_data(mem::U14::try_from(sprite_bm_ptr).unwrap());
                     let sprite_bm = sprite_bm.bits::<Msb0>();
 
-                    let off = (sprite.x - x) % 8;
+                    let off = 8 * sprite_x_bm_idx as isize + (sprite.x as isize) - (x as isize);
                     self.draw_horizontal_opts(
                         off,
-                        sprite_bm.into_iter().take(8 - off).map(|bit| {
+                        sprite_bm.into_iter().take(8).map(|bit| {
                             if sprite.multicolor {
                                 unimplemented!();
                             } else {
@@ -359,8 +368,8 @@ impl<T> VIC20<T> {
         self.draw_horizontal_slice(&COLORS)
     }
 
-    fn draw_horizontal_opts<I: ExactSizeIterator<Item = Option<Color>>>(&self, offset: usize, cols: I) {
-        let starting_point = Point((self.x - X_START) as usize + offset, self.y());
+    fn draw_horizontal_opts<I: ExactSizeIterator<Item = Option<Color>>>(&self, offset: isize, cols: I) {
+        let starting_point = Point(usize::try_from((self.x - X_START) + offset).unwrap(), self.y());
         iter::successors(Some(starting_point), |p| Some(Point(p.0 + 1, p.1)))
             .zip(cols)
             .filter_map(|(point, opt)| opt.map(|col| (point, col)))
@@ -386,6 +395,7 @@ pub trait RasterBreakpointBackend {
     fn remove_raster_breakpoint(&mut self, line: usize);
     fn break_on_every_raster_line(&mut self, brk: bool);
     fn highlight_raster_beam(&mut self, beam: bool);
+    fn highlight_x_grid(&mut self, highlight: Option<Color>);
 }
 
 impl<T> RasterBreakpointBackend for VIC20<T> {
@@ -410,5 +420,10 @@ impl<T> RasterBreakpointBackend for VIC20<T> {
         if beam {
             self.highlight_next_beam_position();
         }
+    }
+
+    fn highlight_x_grid(&mut self, highlight: Option<Color>) {
+        self.highlight_x_grid = highlight;
+
     }
 }

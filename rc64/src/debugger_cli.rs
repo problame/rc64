@@ -95,6 +95,7 @@ inject HEX [HEX [HEX]]  inject raw instruction on next fetch cycle
 exec   HEX [HEX [HEX]]  exe raw instruction now
 press KEY ...           emulate simultaneous press of keys
 beam on|off             Highlight raster beam position
+xgrid COLOR|off         Visualize vic-implementation's x-coordinate grid (it takes 8px steps)
 "#
                 ),
                 "c" => {
@@ -341,6 +342,20 @@ beam on|off             Highlight raster beam position
                         println!("Missing arg");
                         continue;
                     }
+                },
+                x if x.starts_with("xgrid ") => match x.split(' ').collect::<Vec<_>>().get(1) {
+                    None => {
+                        println!("missing arg");
+                        continue;
+                    }
+                    Some(&"off") => vic.borrow_mut().highlight_x_grid(None),
+                    Some(col) => match crate::vic20::Color::from_str(col) {
+                        Ok(col) => vic.borrow_mut().highlight_x_grid(Some(col)),
+                        Err(e) => {
+                            println!("invalid color {:?}: {}", col, e);
+                            continue;
+                        }
+                    },
                 },
                 x => {
                     println!("unknown command: {:?}", x);
