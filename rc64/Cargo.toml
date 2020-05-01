@@ -9,8 +9,9 @@ edition = "2018"
 default-run = "rc64"
 
 [features]
-default = [ "headless-chicken--cia", "headless-chicken--main" ]
+default = [ "headless-chicken--cia", "headless-chicken--main", "headless-chicken--vic--sprite-data-collision" ]
 headless-chicken = []
+headless-chicken--vic--sprite-data-collision = []
 headless-chicken--cia = []
 headless-chicken--main = []
 

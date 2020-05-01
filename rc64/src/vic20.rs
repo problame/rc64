@@ -9,7 +9,7 @@ use crate::ram::RAM;
 use crate::rom::ROM;
 use crate::utils::R2C;
 use crate::vic20::registers::Registers;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::convert::TryFrom;
 use std::iter;
 
@@ -49,7 +49,7 @@ impl From<self::mem::U4> for Color {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Point(pub usize, pub usize);
 
 pub struct VIC20<T> {
@@ -83,6 +83,8 @@ pub const VISIBLE_VERTICAL_PX: usize = 284;
 pub const VBLANK_TOP_PX: usize = 14;
 pub const VBLANK_BTM_PX: usize = 14;
 pub const SCREEN_HEIGHT: usize = VBLANK_TOP_PX + VISIBLE_VERTICAL_PX + VBLANK_BTM_PX;
+
+type Layer = u8;
 
 impl<T: AsRef<[u8]>> VIC20<T> {
     pub fn new(
@@ -145,6 +147,8 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             && self.y() <= content_end_y;
 
         assert!(!inside_content_zone || inside_border_zone);
+
+        let mut written_pixels: HashMap<Point, HashSet<Layer>> = HashMap::new();
 
         if inside_content_zone {
             match (
@@ -290,6 +294,7 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                                 }
                             },
                         ),
+                        Some(((sprite_number + 1) as u8, &mut written_pixels)),
                     );
                 }
             }
@@ -302,6 +307,27 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             const COLORS: [Color; 8] = [C, C, C, C, C, C, C, C];
             self.draw_horizontal_slice(&COLORS)
         }
+
+        // process collisions
+        for (_, layers) in written_pixels {
+            self.regs.sprite_sprite_collision.bits_mut::<Lsb0>().for_each(|idx, value| {
+                value
+                    || ((layers.len() >= 3 || (!layers.contains(&0) && layers.len() >= 2))
+                        && layers.contains(&((idx + 1) as u8)))
+            });
+            self.regs.sprite_data_collision.bits_mut::<Lsb0>().for_each(|idx, value| {
+                value || (layers.contains(&0) && layers.contains(&((idx + 1) as u8)))
+            });
+        }
+        let have_sprite_sprite_collision = self.regs.sprite_sprite_collision != 0
+            && self.regs.interrupt_enabled.contains(InterruptEnabled::EMMC);
+        let have_sprite_data_collision = self.regs.sprite_data_collision != 0
+            && self.regs.interrupt_enabled.contains(InterruptEnabled::EMBC);
+        if have_sprite_data_collision || have_sprite_sprite_collision {
+            dbg!((have_sprite_sprite_collision, have_sprite_data_collision));
+        }
+        self.regs.interrupt_register.set(InterruptRegister::IMMC, have_sprite_sprite_collision);
+        self.regs.interrupt_register.set(InterruptRegister::IMBC, have_sprite_data_collision);
 
         assert!(self.x != X_START || cycles % 63 == 0);
         assert!(
@@ -334,8 +360,8 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         }
 
         // deliver irq if appropriate
-        if self.regs.interrupt_enabled.contains(InterruptEnabled::ERST)
-            && self.regs.interrupt_register.contains(InterruptRegister::IRST)
+        if ((self.regs.interrupt_enabled.bits() & 0b1111) & (self.regs.interrupt_register.bits() & 0b1111))
+            != 0
         {
             Some(crate::interrupt::Interrupt)
         } else {
@@ -390,16 +416,26 @@ impl<T> VIC20<T> {
         self.draw_horizontal_slice(&COLORS)
     }
 
-    fn draw_horizontal_opts<I: ExactSizeIterator<Item = Option<Color>>>(&self, offset: isize, cols: I) {
+    fn draw_horizontal_opts<I: ExactSizeIterator<Item = Option<Color>>>(
+        &self,
+        offset: isize,
+        cols: I,
+        mut modified_pixels: Option<(Layer, &mut HashMap<Point, HashSet<Layer>>)>,
+    ) {
         let starting_point = Point(usize::try_from((self.x - X_START) + offset).unwrap(), self.y());
         iter::successors(Some(starting_point), |p| Some(Point(p.0 + 1, p.1)))
             .zip(cols)
             .filter_map(|(point, opt)| opt.map(|col| (point, col)))
-            .for_each(|(point, col)| self.screen.set_px(point, ARGB::from(col)))
+            .for_each(move |(point, col)| {
+                self.screen.set_px(point, ARGB::from(col));
+                if let Some((layer, modified_pixels)) = modified_pixels.as_mut() {
+                    modified_pixels.entry(point).or_default().insert(*layer);
+                }
+            })
     }
 
     fn draw_horizontal<I: ExactSizeIterator<Item = Color>>(&mut self, cols: I) {
-        self.draw_horizontal_opts(0, cols.map(Some))
+        self.draw_horizontal_opts(0, cols.map(Some), None)
     }
 
     #[inline(always)]
