@@ -147,15 +147,15 @@ impl<T: AsRef<[u8]>> VIC20<T> {
         assert!(!inside_content_zone || inside_border_zone);
 
         if inside_content_zone {
-            // Coordinate transformation
-            let x = (self.x - content_start_x) as usize;
-            let y = self.y() - content_start_y;
-
             match (
                 self.regs.control_register_1.contains(ControlRegister1::BMM),
                 self.regs.control_register_1.contains(ControlRegister1::ECM),
             ) {
                 (false, false) => {
+                    // Coordinate transformation
+                    let x = (self.x - content_start_x) as usize;
+                    let y = self.y() - content_start_y;
+
                     let char_row = y / 8;
                     let char_col = x / 8;
 
@@ -226,6 +226,10 @@ impl<T: AsRef<[u8]>> VIC20<T> {
             for (sprite_number, sprite) in
                 self.regs.sprite_iter_ordered().enumerate().filter(|(_, sprite)| sprite.enabled)
             {
+                // coordinate transformation
+                let x = self.x as usize;
+                let y = self.y;
+
                 assert!(!sprite.multicolor, "sprite multicolor mode not supported");
                 let x_expansion_factor = if sprite.x_expansion { 2 } else { 1 };
                 let width = 24 * x_expansion_factor;
@@ -442,6 +446,5 @@ impl<T> RasterBreakpointBackend for VIC20<T> {
 
     fn highlight_x_grid(&mut self, highlight: Option<Color>) {
         self.highlight_x_grid = highlight;
-
     }
 }
