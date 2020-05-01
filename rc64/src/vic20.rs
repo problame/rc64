@@ -245,17 +245,21 @@ impl<T: AsRef<[u8]>> VIC20<T> {
                     let sprite_bm = self.mem.read_data(mem::U14::try_from(sprite_bm_ptr).unwrap());
                     let sprite_bm = sprite_bm.bits::<Msb0>();
 
-                    self.draw_horizontal_opts(sprite_bm.into_iter().map(|bit| {
-                        if sprite.multicolor {
-                            unimplemented!();
-                        } else {
-                            if *bit {
-                                Some(sprite.color)
+                    let off = (sprite.x - x) % 8;
+                    self.draw_horizontal_opts(
+                        off,
+                        sprite_bm.into_iter().take(8 - off).map(|bit| {
+                            if sprite.multicolor {
+                                unimplemented!();
                             } else {
-                                None
+                                if *bit {
+                                    Some(sprite.color)
+                                } else {
+                                    None
+                                }
                             }
-                        }
-                    }));
+                        }),
+                    );
                 }
             }
         } else if inside_border_zone {
@@ -355,8 +359,8 @@ impl<T> VIC20<T> {
         self.draw_horizontal_slice(&COLORS)
     }
 
-    fn draw_horizontal_opts<I: ExactSizeIterator<Item = Option<Color>>>(&self, cols: I) {
-        let starting_point = Point((self.x - X_START) as usize, self.y());
+    fn draw_horizontal_opts<I: ExactSizeIterator<Item = Option<Color>>>(&self, offset: usize, cols: I) {
+        let starting_point = Point((self.x - X_START) as usize + offset, self.y());
         iter::successors(Some(starting_point), |p| Some(Point(p.0 + 1, p.1)))
             .zip(cols)
             .filter_map(|(point, opt)| opt.map(|col| (point, col)))
@@ -364,7 +368,7 @@ impl<T> VIC20<T> {
     }
 
     fn draw_horizontal<I: ExactSizeIterator<Item = Color>>(&mut self, cols: I) {
-        self.draw_horizontal_opts(cols.map(Some))
+        self.draw_horizontal_opts(0, cols.map(Some))
     }
 
     #[inline(always)]
