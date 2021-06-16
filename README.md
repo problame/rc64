@@ -1,3 +1,10 @@
+This project was jointly developed by:
+
+* [Joshua Bachmeier](mailto:joshua@bachmeier.cc)
+* [Christian Schwarz](mailto:me@cschwarz.com)
+
+---
+
 ## Introduction
 
 Have a look at our [final presentation](https://docs.google.com/presentation/d/1JdwHQDP4C2LULtR_oQqrcnfqxXkiI-fZZ7yfw_HaI9g/edit?usp=sharing) for an introduction.
